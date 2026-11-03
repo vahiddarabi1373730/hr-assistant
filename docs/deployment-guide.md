@@ -15,6 +15,19 @@
 | Health check | https://hr-assist-backend-4dmd.onrender.com/healthz |
 | Repository | https://github.com/vahiddarabi1373730/hr-assist |
 
+## وضعیت نهایی تأییدشده
+
+در تاریخ آخرین تست، معماری عملیاتی پروژه این است:
+
+- frontend و فایل‌های استاتیک روی Netlify منتشر شده‌اند.
+- backend FastAPI به‌صورت Web Service روی Render و با وضعیت `Live` اجرا می‌شود.
+- PostgreSQL production روی Neon قرار دارد و migration تا `0009 (head)` اجرا شده است.
+- درخواست‌های `/api`، `/auth` و `/healthz` از Netlify به backend Render proxy می‌شوند.
+- ورود کاربر و نمایش صفحهٔ جست‌وجو از دامنهٔ عمومی Netlify با موفقیت تست شده است.
+
+این جداسازی باعث می‌شود توسعهٔ روزمره همچنان با PostgreSQL لوکال انجام شود،
+درحالی‌که نسخهٔ عمومی از Render و Neon استفاده می‌کند.
+
 ## لوکال و production
 
 در توسعه، `backend/.env` به PostgreSQL لوکال اشاره می‌کند:
