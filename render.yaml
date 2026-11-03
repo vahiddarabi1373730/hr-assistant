@@ -13,7 +13,7 @@ services:
       - key: HR_APP_DATABASE_URL
         sync: false
       - key: HR_APP_DB_PASSWORD
-        generateValue: true
+        sync: false
       - key: HR_RESET_PASSWORD_TOKEN_SECRET
         generateValue: true
       - key: HR_VERIFICATION_TOKEN_SECRET
