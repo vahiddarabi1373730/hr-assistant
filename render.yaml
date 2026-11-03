@@ -28,3 +28,7 @@ services:
         value: qwen/qwen3.8-27b
       - key: HR_RESUME_EXTRACT_MODEL_ESCALATION
         value: qwen/qwen3.8-27b
+      - key: HR_OCR_ENABLED
+        value: "false"
+      - key: HR_VISION_ENABLED
+        value: "true"
