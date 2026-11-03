@@ -1,4 +1,4 @@
-/auth/* https://simply-afford-accordingly-executives.trycloudflare.com/auth/:splat 200!
-/api/* https://simply-afford-accordingly-executives.trycloudflare.com/api/:splat 200!
-/healthz https://simply-afford-accordingly-executives.trycloudflare.com/healthz 200!
+/auth/* https://hr-assist-backend-4dmd.onrender.com/auth/:splat 200!
+/api/* https://hr-assist-backend-4dmd.onrender.com/api/:splat 200!
+/healthz https://hr-assist-backend-4dmd.onrender.com/healthz 200!
 /* /index.html 200
