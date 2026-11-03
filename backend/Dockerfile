@@ -29,4 +29,4 @@ RUN groupadd --system hr-assist \
 USER hr-assist
 
 EXPOSE 8000
-CMD ["sh", "-c", "exec fastapi run app/main.py --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "alembic upgrade head && exec fastapi run app/main.py --host 0.0.0.0 --port ${PORT:-8000}"]

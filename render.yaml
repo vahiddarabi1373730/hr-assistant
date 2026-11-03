@@ -7,7 +7,6 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /healthz
-    preDeployCommand: alembic upgrade head
     envVars:
       - key: HR_MIGRATION_DATABASE_URL
         sync: false
