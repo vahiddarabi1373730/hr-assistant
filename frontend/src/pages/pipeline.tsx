@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography,
 } from "@/components/ui-compat"
-import { ArrowLeftRight, History, StickyNote } from "lucide-react"
+import { ArrowLeftRight, CalendarDays, History, RefreshCw, StickyNote } from "lucide-react"
 import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
 import { CandidatePicker } from "@/components/candidate-picker"
 import { InterviewSchedulerDialog } from "@/components/interview-scheduler-dialog"
@@ -137,14 +137,15 @@ export function PipelinePage() {
         <Typography color="text.secondary" sx={{ mt: 1, fontSize: 13 }}>هر کارت، یک کاندیدا در یک فرصت شغلی است. جابه‌جایی فقط با تصمیم شما ثبت می‌شود.</Typography>
       </Box>
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-        <Button component={Link} to="/roles">فرصت‌های شغلی</Button>
+        <Button component={Link} to="/roles" variant="outlined">فرصت‌های شغلی</Button>
         <Button variant="outlined" onClick={() => setCreating(true)}>فرصت جدید</Button>
         <Button variant="contained" disabled={!openRoles.length} onClick={() => {
           setSourceRole(selectedRole?.status === "open" ? selectedRole.id : openRoles[0]?.id ?? ""); setCandidateId(""); setCandidateSearch(""); setCandidates(null); setSourcing(true)
         }}>افزودن کاندیدا</Button>
+        <Button variant="outlined" disabled={busy} startIcon={<RefreshCw />} onClick={() => void mutate(() => load())}>تازه‌سازی</Button>
       </Stack>
     </Stack>
-    {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button disabled={busy} onClick={() => void mutate(() => load())}>تازه‌سازی</Button>}>{error}</Alert>}
+    {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button disabled={busy} startIcon={<RefreshCw />} onClick={() => void mutate(() => load())}>تازه‌سازی</Button>}>{error}</Alert>}
     {!data && !error && <CircularProgress aria-label="بارگذاری برد" />}
     {data && roleId && !selectedRole && <Alert severity="warning">این فرصت شغلی در سازمان شما پیدا نشد. <Button component={Link} to="/board">همهٔ فرصت‌ها</Button></Alert>}
     {selectedRole && <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
@@ -168,10 +169,9 @@ export function PipelinePage() {
           <MenuItem value="all">همهٔ مسئول‌ها</MenuItem><MenuItem value="unassigned">بدون مسئول</MenuItem>
           {owners.map(owner => <MenuItem key={owner.id} value={owner.id}>{ownerLabel(owners, owner.id)}</MenuItem>)}
         </TextField>
-        <Button disabled={busy} onClick={() => void mutate(() => load())}>تازه‌سازی برد</Button>
         <Typography color="text.secondary" sx={{ alignSelf: "center", fontSize: 12 }}>{applications.length.toLocaleString("fa-IR")} درخواست · برای لمس و صفحه‌کلید از «جابه‌جایی» استفاده کنید.</Typography>
       </Stack>
-      {/* Explicit CSS grid direction fixes physical order independently of RTL text/Emotion flipping. */}
+      {/* Keep the stage order RTL independently of the surrounding page direction. */}
       <Box sx={{ overflowX: "auto", pb: 2 }} aria-label="ستون‌های مراحل استخدام">
         <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", minHeight: 440 }}>
           {[...ending, ...live].map(stage => {
@@ -206,11 +206,14 @@ export function PipelinePage() {
                    <OwnerBadge owners={owners} id={application.owner_id} />
                    <Link className="pipeline-card-link pipeline-card-notes-link" to={`/candidates/${application.candidate_id}?tab=notes&application=${application.id}`}><StickyNote data-icon="inline-start" />یادداشت‌های درخواست</Link>
                   <div className="pipeline-card-actions">
-                    <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
-                      <Button variant="outlined" size="small" disabled={busy} startIcon={<ArrowLeftRight />} onClick={() => startMove(application)}>جابه‌جایی</Button>
-                      <Button variant="outlined" size="small" disabled={busy} startIcon={<History />} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}>مسئول و تاریخچه</Button>
+                    <Stack direction="row" sx={{ gap: 0.75, flexWrap: "nowrap", width: "100%" }}>
+                      <Button variant="outlined" size="small" disabled={busy} startIcon={<ArrowLeftRight />} onClick={() => startMove(application)}
+                        sx={{ flex: "1 1 0", minWidth: 0, px: 0.75, fontSize: 11, whiteSpace: "nowrap" }}>جابه‌جایی</Button>
+                      <Button variant="outlined" size="small" disabled={busy} startIcon={<History />} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}
+                        sx={{ flex: "1 1 0", minWidth: 0, px: 0.75, fontSize: 11, whiteSpace: "nowrap" }}>مسئول و تاریخچه</Button>
                     </Stack>
-                    <Button size="small" disabled={busy} onClick={() => setScheduling(application)}>برنامه‌ریزی مصاحبه</Button>
+                    <Button variant="text" color="primary" size="small" disabled={busy} startIcon={<CalendarDays />} onClick={() => setScheduling(application)}
+                      sx={{ justifyContent: "flex-start", textDecoration: "underline", textUnderlineOffset: "3px" }}>برنامه‌ریزی مصاحبه</Button>
                     <Button size="small" color="error" disabled={busy} onClick={() => {
                       setDeletionError(null)
                       setScheduling(null)
