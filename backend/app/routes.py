@@ -6,12 +6,12 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi_users import InvalidPasswordException
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
 from fastapi_users.exceptions import UserAlreadyExists
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
@@ -363,28 +363,36 @@ async def upload_resume(
 async def list_candidates(
     ctx: TenantContextDep,
     session: Annotated[AsyncSession, Depends(get_session)],
+    query: Annotated[str | None, Query(max_length=100)] = None,
 ) -> CandidateList:
-    candidates = (
-        (
-            await session.execute(
-                select(Candidate)
-                .options(
-                    load_only(
-                        Candidate.id,
-                        Candidate.full_name,
-                        Candidate.headline,
-                        Candidate.email,
-                        Candidate.created_at,
-                        Candidate.new_resume_received,
-                    )
-                )
-                .where(Candidate.org_id == ctx.org.id)
-                .order_by(Candidate.created_at.desc(), Candidate.id.desc())
+    filters = [Candidate.org_id == ctx.org.id]
+    if query := query.strip() if query else None:
+        pattern = f"%{query}%"
+        filters.append(
+            or_(
+                Candidate.full_name.ilike(pattern),
+                Candidate.email.ilike(pattern),
+                Candidate.headline.ilike(pattern),
             )
         )
-        .scalars()
-        .all()
+    statement = (
+        select(Candidate)
+        .options(
+            load_only(
+                Candidate.id,
+                Candidate.full_name,
+                Candidate.headline,
+                Candidate.email,
+                Candidate.created_at,
+                Candidate.new_resume_received,
+            )
+        )
+        .where(*filters)
+        .order_by(Candidate.created_at.desc(), Candidate.id.desc())
     )
+    if query:
+        statement = statement.limit(25)
+    candidates = (await session.execute(statement)).scalars().all()
     return CandidateList(items=[_summary(candidate) for candidate in candidates])
 
 

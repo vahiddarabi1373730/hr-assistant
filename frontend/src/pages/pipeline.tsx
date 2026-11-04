@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router"
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
+import { CandidatePicker } from "@/components/candidate-picker"
 import { ownerLabel, roleStatusLabels } from "@/lib/pipeline"
 import {
   addToRole, assignApplication, editRole, fetchApplication, fetchCandidates,
@@ -70,12 +71,20 @@ export function PipelinePage() {
     return () => controller.abort()
   }, [inspecting])
   useEffect(() => {
-    if (!sourcing) return
-    let active = true
-    fetchCandidates().then(result => { if (active) setCandidates(result) })
-      .catch(cause => { if (active) setError(persianError(cause)) })
-    return () => { active = false }
-  }, [sourcing])
+    if (!sourcing || candidateSearch.trim().length < 2) {
+      setCandidates(null)
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      fetchCandidates(candidateSearch, controller.signal).then(result => {
+        if (!controller.signal.aborted) setCandidates(result)
+      }).catch(cause => {
+        if (!controller.signal.aborted) setError(persianError(cause))
+      })
+    }, 250)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [candidateSearch, sourcing])
   async function mutate(action: () => Promise<unknown>, done?: () => void) {
     setBusy(true); setError(null)
     try { await action(); await load(); done?.() }
@@ -96,8 +105,7 @@ export function PipelinePage() {
   const ending = (data?.stages ?? []).filter(stage => ["rejected", "withdrawn"].includes(stage.kind))
   const live = (data?.stages ?? []).filter(stage => !["rejected", "withdrawn"].includes(stage.kind))
   const destinationStage = data?.stages.find(stage => stage.id === destination)
-  const candidateList = (candidates ?? []).filter(candidate =>
-    `${candidate.full_name} ${candidate.email ?? ""} ${candidate.headline ?? ""}`.toLocaleLowerCase().includes(candidateSearch.toLocaleLowerCase()))
+  const candidateList = candidates ?? []
 
   return <>
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between", mb: 3 }}>
@@ -231,12 +239,8 @@ export function PipelinePage() {
         <TextField select label="فرصت شغلی باز" value={sourceRole} onChange={e => setSourceRole(e.target.value)}>
           {data?.roles.filter(role => role.status === "open").map(role => <MenuItem key={role.id} value={role.id}>{role.title}</MenuItem>)}
         </TextField>
-        <TextField label="پیدا کردن در بانک" value={candidateSearch} onChange={e => setCandidateSearch(e.target.value)} />
-        {!candidates && <CircularProgress aria-label="بارگذاری بانک کاندیداها" />}
-        {candidates && !candidateList.length && <Alert severity="info">کاندیدایی پیدا نشد. <Button component={Link} to="/upload">بارگذاری رزومه</Button></Alert>}
-        <TextField select label="کاندیدا" value={candidateId} onChange={e => setCandidateId(e.target.value)}>
-          {candidateList.map(candidate => <MenuItem key={candidate.id} value={candidate.id}>{candidate.full_name} · {candidate.email ?? candidate.headline ?? "بدون عنوان"}</MenuItem>)}
-        </TextField>
+        <CandidatePicker query={candidateSearch} onQueryChange={value => { setCandidateSearch(value); setCandidateId("") }}
+          candidates={candidateList} selectedId={candidateId} onSelect={setCandidateId} loading={candidateSearch.trim().length >= 2 && candidates === null} />
         <OwnerSelect owners={owners} value={sourceOwner} onChange={setSourceOwner} label="مسئول درخواست جدید (اختیاری)" />
       </Stack></DialogContent>
       <DialogActions sx={{ p: 3 }}><Button disabled={busy} onClick={() => setSourcing(false)}>انصراف</Button>

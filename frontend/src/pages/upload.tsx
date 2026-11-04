@@ -10,7 +10,7 @@ import {
   Paper,
   Stack,
   Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import { ArrowLeft, FileText, Trash2, UploadCloud } from "lucide-react"
 import { persianError, uploadResume } from "@/lib/api"
 import { parseStatusLabel } from "@/lib/profile"
@@ -130,7 +130,7 @@ export function UploadPage() {
             textAlign: "center",
           }}
         >
-          <UploadCloud size={42} color="#1565c0" aria-hidden="true" />
+          <UploadCloud size={42} color="var(--primary)" aria-hidden="true" style={{ marginInline: "auto" }} />
           <Typography variant="h5" sx={{ mt: 2 }}>
             رزومه‌ها را اینجا رها کنید
           </Typography>

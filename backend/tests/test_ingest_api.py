@@ -70,6 +70,14 @@ class TestUploadToPool:
         items = pool.json()["items"]
         assert [c["full_name"] for c in items] == ["پیمان رضایی"]
 
+        filtered_pool = await api_client.get("/api/candidates?query=peyman@example.com")
+        assert filtered_pool.status_code == 200
+        assert [c["id"] for c in filtered_pool.json()["items"]] == [body["candidate"]["id"]]
+
+        empty_pool = await api_client.get("/api/candidates?query=not-a-candidate")
+        assert empty_pool.status_code == 200
+        assert empty_pool.json()["items"] == []
+
         detail = await api_client.get(f"/api/candidates/{body['candidate']['id']}")
         assert detail.status_code == 200
         candidate = detail.json()

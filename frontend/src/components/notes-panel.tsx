@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router"
 import {
   Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, MenuItem, Paper, Stack, TextField, Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import { AtSign, Pencil } from "lucide-react"
 import { fetchMentionUsers, persianError, saveNote, type CandidateNote, type NotePerson, type PipelineApplication, type PipelineOwner } from "@/lib/api"
 import { formatJalali } from "@/lib/jalali"

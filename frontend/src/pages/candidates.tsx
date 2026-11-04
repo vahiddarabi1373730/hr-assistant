@@ -16,7 +16,7 @@ import {
   TableRow,
   TextField,
   Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import { fetchCandidates, persianError, type CandidateSummary } from "@/lib/api"
 import { formatJalali } from "@/lib/jalali"
 

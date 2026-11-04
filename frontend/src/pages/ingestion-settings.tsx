@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router"
-import { Alert, Button, CircularProgress, Paper, Stack, Typography } from "@mui/material"
+import { Alert, Button, CircularProgress, Paper, Stack, Typography } from "@/components/ui-compat"
 import { fetchIngestionSettings, persianError, type IngestionSettings } from "@/lib/api"
 
 export function IngestionSettingsPage() {

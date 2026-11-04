@@ -17,7 +17,7 @@ import {
   Tab,
   Tabs,
   Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import {
   ArrowRight,
   Download,

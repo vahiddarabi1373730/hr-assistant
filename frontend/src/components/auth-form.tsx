@@ -1,18 +1,14 @@
 import { useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
-import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material"
+import { ShieldCheck } from "lucide-react"
 import { useAuth } from "@/auth"
 import { login, persianError, signup } from "@/lib/api"
 import { Wordmark } from "@/components/shell"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 
 export function AuthForm({ registering = false }: { registering?: boolean }) {
   const navigate = useNavigate()
@@ -37,96 +33,22 @@ export function AuthForm({ registering = false }: { registering?: boolean }) {
       setBusy(false)
     }
   }
-  return (
-    <Box
-      sx={{
-        minHeight: "100svh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        p: 2,
-      }}
-    >
-      <Stack spacing={4} sx={{ width: "100%", maxWidth: 420 }}>
-        <Box sx={{ alignSelf: "center" }}>
-          <Wordmark />
-        </Box>
-        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
-          <Typography variant="h5">
-            {registering ? "ساخت حساب سازمان" : "ورود به حساب"}
-          </Typography>
-          <Typography
-            color="text.secondary"
-            sx={{ ...{ mt: 1, mb: 3 }, fontSize: 13 }}
-          >
-            {registering
-              ? "فضای مدیریت رزومه‌های سازمان را ایجاد کنید."
-              : "برای مدیریت رزومه‌ها وارد فضای کاری خود شوید."}
-          </Typography>
-          <Stack
-            component="form"
-            onSubmit={(event) => void submit(event)}
-            spacing={2.5}
-          >
-            {error && <Alert severity="error">{error}</Alert>}
-            {registering && (
-              <TextField
-                label="نام سازمان"
-                required
-                value={org}
-                onChange={(event) => setOrg(event.target.value)}
-                autoComplete="organization"
-              />
-            )}
-            <TextField
-              label="ایمیل"
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              slotProps={{ htmlInput: { dir: "ltr" } }}
-            />
-            <TextField
-              label="گذرواژه"
-              type="password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={registering ? "new-password" : "current-password"}
-              slotProps={{
-                htmlInput: { minLength: registering ? 8 : undefined },
-              }}
-            />
-            <Button
-              variant="contained"
-              size="large"
-              type="submit"
-              disabled={busy}
-              startIcon={
-                busy ? (
-                  <CircularProgress size={16} color="inherit" />
-                ) : undefined
-              }
-            >
-              {busy ? "لطفاً صبر کنید…" : registering ? "ایجاد حساب" : "ورود"}
-            </Button>
-          </Stack>
-          <Typography
-            color="text.secondary"
-            sx={{ ...{ mt: 3, textAlign: "center" }, fontSize: 12 }}
-          >
-            {registering ? "حساب دارید؟ " : "حساب ندارید؟ "}
-            <Box
-              component={Link}
-              to={registering ? "/login" : "/signup"}
-              sx={{ color: "primary.main", fontWeight: 650 }}
-            >
-              {registering ? "وارد شوید" : "ثبت‌نام کنید"}
-            </Box>
-          </Typography>
-        </Paper>
-      </Stack>
-    </Box>
-  )
+
+  return <div className="auth-layout">
+    <aside className="auth-aside"><Wordmark /><div className="auth-message"><h2>برای ساختن یک تیم خوب، از شناخت آدم‌ها شروع کنید.</h2><p>رزومه‌ها، فرصت‌های شغلی و گفت‌وگوهای تیم استخدام را در یک فضای کاری منظم دنبال کنید.</p></div><small className="flex items-center gap-2 text-xs"><ShieldCheck size={17} />فضای اختصاصی تیم استخدام شما</small></aside>
+    <main className="auth-main"><div className="auth-form-container">
+      <h1>{registering ? "ساخت فضای کار سازمان" : "به فضای کارتان خوش آمدید"}</h1>
+      <p>{registering ? "اطلاعات سازمان را وارد کنید و کار را شروع کنید." : "برای ادامه، وارد حساب کاربری خود شوید."}</p>
+      <form onSubmit={event => void submit(event)}>
+        <FieldGroup>
+          {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+          {registering && <Field><FieldLabel htmlFor="org-name">نام سازمان</FieldLabel><Input id="org-name" required value={org} onChange={event => setOrg(event.target.value)} autoComplete="organization" /></Field>}
+          <Field><FieldLabel htmlFor="email">ایمیل</FieldLabel><Input id="email" type="email" required value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" dir="ltr" placeholder="you@company.com" /></Field>
+          <Field><FieldLabel htmlFor="password">گذرواژه</FieldLabel><Input id="password" type="password" required value={password} onChange={event => setPassword(event.target.value)} autoComplete={registering ? "new-password" : "current-password"} minLength={registering ? 8 : undefined} dir="ltr" /></Field>
+          <Button type="submit" disabled={busy} className="mt-2 w-full">{busy && <Spinner data-icon="inline-start" />}{busy ? "لطفاً صبر کنید…" : registering ? "ایجاد حساب و فضای کار" : "ورود به فضای کار"}</Button>
+        </FieldGroup>
+      </form>
+      <p className="mt-8 text-center text-xs text-muted-foreground">{registering ? "حساب دارید؟ " : "هنوز حساب ندارید؟ "}<Link className="font-semibold text-primary" to={registering ? "/login" : "/signup"}>{registering ? "وارد شوید" : "ساخت حساب سازمان"}</Link></p>
+    </div></main>
+  </div>
 }

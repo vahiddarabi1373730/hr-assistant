@@ -3,7 +3,7 @@ import { Link } from "react-router"
 import {
   Alert, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, MenuItem, Stack, TextField, Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import {
   addToRole, createRole, fetchRoles, fetchPipelineOwners, persianError,
   type PipelineOwner, type PipelineRole,

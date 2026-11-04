@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router"
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Divider, MenuItem, Paper, Snackbar, Stack, TextField, Typography } from "@mui/material"
-import { ArrowUpRight, BriefcaseBusiness, Columns3, MapPin, Plus, Search, SlidersHorizontal } from "lucide-react"
+import { Alert, Button as LegacyButton, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from "@/components/ui-compat"
+import { ArrowLeft, BriefcaseBusiness, Columns3, Inbox, Lightbulb, MapPin, Plus, Search, ShieldCheck, SlidersHorizontal, Sparkles, Upload, Users, X } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ApiError, persianError } from "@/lib/api"
 import { enumLabels, fieldLabels, filterLabel, opLabels, searchWarning, streamSearch, type SearchCandidate, type SearchDSL, type SearchFilter } from "@/lib/search"
 
 const emptyDSL: SearchDSL = { filters: [], semantic_query: "" }
+
 
 function FilterEditor({ filter, onClose, onSave }: { filter: SearchFilter; onClose: () => void; onSave: (value: SearchFilter) => void }) {
   const [value, setValue] = useState(filter)
@@ -33,9 +39,10 @@ function FilterEditor({ filter, onClose, onSave }: { filter: SearchFilter; onClo
       </TextField>
       <Alert severity="info">تغییر شرط‌ها فقط روی جست‌وجو اثر دارد؛ مرحلهٔ هیچ کاندیدایی تغییر نمی‌کند.</Alert>
     </Stack></DialogContent>
-    <DialogActions><Button onClick={onClose}>انصراف</Button><Button variant="contained" disabled={!value.value.trim()} onClick={() => onSave(value)}>اعمال و جست‌وجو</Button></DialogActions>
+    <DialogActions><LegacyButton onClick={onClose}>انصراف</LegacyButton><LegacyButton variant="contained" disabled={!value.value.trim()} onClick={() => onSave(value)}>اعمال و جست‌وجو</LegacyButton></DialogActions>
   </Dialog>
 }
+
 
 export function SearchPage() {
   const [params, setParams] = useSearchParams()
@@ -91,84 +98,72 @@ export function SearchPage() {
   function update(next: SearchDSL) { setDSL(next); void run({ dsl: next }) }
   const softest = dsl.filters.find(f => f.id === relax)
 
-  return <>
-    <Stack spacing={1.5}>
-      <Paper variant="outlined" component="header" sx={{ p: { xs: 1.5, sm: 2 } }}>
-        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "flex-start", gap: 1, mb: 0.25 }}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography component="h1" sx={{ fontSize: { xs: 16, sm: 18 }, fontWeight: 750, lineHeight: 1.7 }}>چه کسی را جست‌وجو می‌کنید؟</Typography>
-          </Box>
-          <Button component={Link} to="/board" size="small" startIcon={<Columns3 size={16} />} sx={{ flexShrink: 0, px: 0.75, fontSize: 12 }}>برد استخدام</Button>
-        </Stack>
-        <Typography color="text.secondary" sx={{ mb: 1.5, fontSize: 12 }}>تمام بانک کاندیداها؛ حتی بدون درخواست شغلی فعال</Typography>
-        <Box component="form" onSubmit={submit} sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-          <TextField fullWidth size="small" label="جست‌وجوی کاندیدا" placeholder="نام، مهارت یا سابقه؛ مثلاً vahid یا توسعه‌دهنده React" value={query} onChange={e => setQuery(e.target.value)} slotProps={{ htmlInput: { maxLength: 1000, dir: "auto" } }} sx={{ minWidth: 0 }} />
-          <Button type="submit" variant="contained" size="small" disabled={!query.trim()} startIcon={<Search size={16} />} sx={{ height: 40, px: 1.5, flexShrink: 0 }}>جست‌وجو</Button>
-        </Box>
-      </Paper>
 
-      {started ? <Paper variant="outlined" sx={{ p: 1.5 }}>
-        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, mb: 1.25 }}>
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
-            <SlidersHorizontal size={16} />
-            <Typography sx={{ fontWeight: 650, fontSize: 13 }}>برداشت از جست‌وجو</Typography>
-          </Stack>
-          <Button size="small" startIcon={<Plus size={16} />} onClick={() => setEditing({ id: crypto.randomUUID().replaceAll("-", "").slice(0, 16), field: "skill", op: "contains", value: "", constraint_softness: 0 })}>افزودن شرط</Button>
-        </Stack>
-        {dsl.filters.length > 0 ? <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", gap: 0.75, mb: 1.5 }}>
-          {dsl.filters.map(filter => <Chip key={filter.id} size="small" label={filterLabel(filter)} color={filter.op === "ne" || filter.op === "not_contains" ? "warning" : "primary"} variant="outlined" onClick={() => setEditing(filter)} onDelete={() => update({ ...dsl, filters: dsl.filters.filter(f => f.id !== filter.id) })} />)}
-        </Stack> : null}
-        <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
-          <TextField size="small" fullWidth label="واژه‌های جست‌وجو" value={dsl.semantic_query} onChange={e => setDSL({ ...dsl, semantic_query: e.target.value })} onKeyDown={e => { if (e.key === "Enter") update(dsl) }} sx={{ minWidth: 0 }} />
-          <Button size="small" variant="outlined" aria-label="اجرای شرط‌ها و واژه‌ها" onClick={() => update(dsl)} sx={{ height: 40, flexShrink: 0 }}>اعمال</Button>
-        </Box>
-        <Typography sx={{ mt: 0.75, fontSize: 11 }} color="text.secondary">
-          عدد و نفی را در شرط‌ها نگه دارید.{mode === "sql" ? " ویرایش دستی؛ بدون فراخوانی مدل." : " برای ویرایش هر شرط، روی آن بزنید."}
-        </Typography>
-      </Paper> : null}
-      {warnings.map(code => <Alert severity="warning" key={code}>{searchWarning[code] ?? "بخشی از جست‌وجو در دسترس نیست."}</Alert>)}
-      {error ? <Alert severity="error">{error}</Alert> : null}
-      <Box aria-live="polite" aria-busy={loading}>
-        {loading ? <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 2 }}><CircularProgress size={20} aria-label="در حال جست‌وجو" /><Typography>در حال یافتن کاندیداها…</Typography></Stack> : null}
-        {items.length ? <Paper variant="outlined"><Stack divider={<Divider />}>
-          {items.map(item => <Box key={item.id} sx={{
-            px: { xs: 1.5, sm: 2 }, py: 1.5,
-            display: "grid", alignItems: "center",
-            gridTemplateColumns: { xs: "minmax(0, 1fr) auto", sm: "minmax(0, 1.15fr) minmax(0, 1fr) auto" },
-            columnGap: 2, rowGap: 1,
-          }}>
-            <Box sx={{ minWidth: 0 }}>
-              <Typography component={Link} to={`/candidates/${item.id}`} sx={{
-                display: "block", width: "fit-content", maxWidth: "100%",
-                fontWeight: 750, fontSize: 14, color: "primary.main", textDecoration: "none",
-                "&:hover": { textDecoration: "underline" },
-                "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 },
-              }} dir="auto">{item.full_name}</Typography>
-              <Typography noWrap title={item.headline ?? undefined} sx={{ mt: 0.25, fontSize: 12 }} color="text.secondary"><bdi>{item.headline ?? "عنوان حرفه‌ای ثبت نشده"}</bdi></Typography>
-            </Box>
-            <Stack direction="row" useFlexGap sx={{
-              gridColumn: { xs: "1 / -1", sm: "auto" }, gridRow: { xs: 2, sm: "auto" },
-              minWidth: 0, flexWrap: "wrap", columnGap: 2, rowGap: 0.5, color: "text.secondary",
-            }}>
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center", minWidth: 0, maxWidth: "100%" }}>
-                <MapPin size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
-                <Typography noWrap title={item.location ?? undefined} dir="auto" sx={{ fontSize: 12 }}>{item.location ?? "محل سکونت نامشخص"}</Typography>
-              </Stack>
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: "center" }} title="سابقهٔ قابل محاسبه از تاریخ‌های رزومه">
-                <BriefcaseBusiness size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 12 }}>{item.years_experience_total === null ? "سابقه نامشخص" : `${item.years_experience_total.toLocaleString("fa-IR")} سال سابقهٔ قابل محاسبه`}</Typography>
-              </Stack>
-            </Stack>
-            <Button component={Link} to={`/candidates/${item.id}`} size="small" endIcon={<ArrowUpRight size={14} />} sx={{ gridColumn: { xs: 2, sm: 3 }, gridRow: { xs: 1, sm: "auto" }, minWidth: 0, px: 0.75, fontSize: 12 }}>پرونده</Button>
-          </Box>)}
-        </Stack></Paper> : started && !loading && !error ? <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
-          <Typography sx={{ fontWeight: 700 }}>کاندیدایی با این شرط‌ها پیدا نشد</Typography><Typography color="text.secondary" sx={{ my: 1 }}>شرط‌ها را اصلاح کنید یا یکی از شرط‌های قابل انعطاف را کنار بگذارید.</Typography>
-          {softest ? <Button variant="outlined" onClick={() => void run({ dsl, relax: true })}>کنار گذاشتن «{filterLabel(softest)}»</Button> : <Typography sx={{ fontSize: 12 }}>شرط قابل انعطافی انتخاب نشده است.</Typography>}
-        </Paper> : !started ? <Typography color="text.secondary">جست‌وجو را با مهارت، صنعت یا سابقه شروع کنید. تصمیم استخدام و تغییر مرحله همیشه با شماست.</Typography> : null}
-        {items.length && !loading ? <Typography sx={{ mt: 1, fontSize: 12 }} color="text.secondary">{items.length.toLocaleString("fa-IR")} نتیجه (حداکثر ۵۰)؛ ترتیب جست‌وجو ارزیابی شایستگی یا توصیهٔ استخدام نیست.</Typography> : null}
-      </Box>
-    </Stack>
-    {editing ? <FilterEditor key={editing.id} filter={editing} onClose={() => setEditing(null)} onSave={value => { setEditing(null); update({ ...dsl, filters: [...dsl.filters.filter(f => f.id !== value.id), value] }) }} /> : null}
-    <Snackbar open={Boolean(toast)} autoHideDuration={10000} onClose={() => setToast("")} message={toast} />
+  function chooseExample(value: string) {
+    setQuery(value)
+    if (value === initial) void run({ query: value })
+    else setParams({ q: value })
+  }
+
+  return <>
+    <header className="page-heading">
+      <div><h1>همکار بعدی تیم را پیدا کنید</h1><p>در تمام بانک کاندیداها، با نام، مهارت یا تجربه جست‌وجو کنید.</p></div>
+      <div className="heading-actions">
+        <Button variant="outline" render={<Link to="/board" />} nativeButton={false}><Columns3 data-icon="inline-start" />برد استخدام</Button>
+        <Button render={<Link to="/upload" />} nativeButton={false}><Upload data-icon="inline-start" />افزودن رزومه</Button>
+      </div>
+    </header>
+
+    <section className="search-workbench" aria-labelledby="search-title">
+      <h2 className="search-workbench-title" id="search-title"><Sparkles aria-hidden="true" />چه کسی را جست‌وجو می‌کنید؟</h2>
+      <form onSubmit={submit}>
+        <FieldGroup><Field>
+          <FieldLabel htmlFor="candidate-query" className="sr-only">جست‌وجوی کاندیدا</FieldLabel>
+          <InputGroup className="search-composer">
+            <InputGroupInput id="candidate-query" placeholder="مثلاً توسعه‌دهنده React با ۳ سال سابقه…" value={query} onChange={e => setQuery(e.target.value)} maxLength={1000} dir="auto" autoComplete="off" />
+            <InputGroupAddon align="inline-end"><Button type="submit" disabled={!query.trim()}><Search data-icon="inline-start" />جست‌وجو</Button></InputGroupAddon>
+          </InputGroup>
+        </Field></FieldGroup>
+      </form>
+      <div className="search-examples"><span>برای شروع امتحان کنید:</span>
+        {["توسعه‌دهنده React", "کارشناس منابع انسانی", "مدیر فروش در تهران"].map(example => <Button key={example} variant="outline" size="sm" onClick={() => chooseExample(example)}>{example}</Button>)}
+      </div>
+      <p className="search-scope"><ShieldCheck aria-hidden="true" />همه کاندیداها جست‌وجو می‌شوند؛ حتی افرادی که درخواست شغلی فعال ندارند.</p>
+    </section>
+
+    {started && <section className="legacy-paper mt-5 p-5" aria-label="شرط‌های جست‌وجو">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-sm font-semibold"><SlidersHorizontal size={16} />برداشت از جست‌وجو</h2><Button variant="ghost" size="sm" onClick={() => setEditing({ id: crypto.randomUUID().replaceAll("-", "").slice(0, 16), field: "skill", op: "contains", value: "", constraint_softness: 0 })}><Plus data-icon="inline-start" />افزودن شرط</Button></div>
+      {dsl.filters.length > 0 && <div className="mb-4 flex flex-wrap gap-2">{dsl.filters.map(filter => <Badge variant="outline" key={filter.id} className="gap-1 py-1">
+        <button type="button" onClick={() => setEditing(filter)}>{filterLabel(filter)}</button>
+        <button type="button" onClick={() => update({ ...dsl, filters: dsl.filters.filter(f => f.id !== filter.id) })} aria-label={`حذف شرط ${filterLabel(filter)}`} className="rounded p-1 hover:bg-muted"><X size={12} /></button>
+      </Badge>)}</div>}
+      <form onSubmit={event => { event.preventDefault(); update(dsl) }} className="flex items-end gap-3">
+        <TextField fullWidth label="واژه‌های جست‌وجو" value={dsl.semantic_query} onChange={e => setDSL({ ...dsl, semantic_query: e.target.value })} />
+        <Button type="submit" variant="outline" aria-label="اجرای شرط‌ها و واژه‌ها">اعمال</Button>
+      </form>
+      <p className="mt-3 text-xs text-muted-foreground">عدد و نفی را در شرط‌ها نگه دارید.{mode === "sql" ? " ویرایش دستی شرط‌ها فعال است." : " برای ویرایش هر شرط، روی آن بزنید."}</p>
+    </section>}
+    {warnings.map(code => <Alert severity="warning" key={code} sx={{ mt: 2 }}>{searchWarning[code] ?? "بخشی از جست‌وجو در دسترس نیست."}</Alert>)}
+    {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+    {toast && <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setToast("")}>{toast}</Alert>}
+
+    <div aria-live="polite" aria-busy={loading}>
+      {started && <div className="result-summary"><h2>{loading ? "در حال یافتن کاندیداها…" : `نتایج جست‌وجو (${items.length.toLocaleString("fa-IR")})`}</h2>{!loading && items.length > 0 && <p>ترتیب نتایج، توصیه استخدام نیست.</p>}</div>}
+      {items.length > 0 && <div className="search-result-list">{items.map(item => <article key={item.id} className="search-result-row">
+        <div className="candidate-initials" aria-hidden="true">{item.full_name.split(" ").slice(0, 2).map(word => word[0]).join(" ")}</div>
+        <div className="min-w-0"><Link className="result-name" to={`/candidates/${item.id}`} dir="auto">{item.full_name}</Link><p className="result-headline truncate" dir="auto" title={item.headline ?? undefined}>{item.headline ?? "عنوان حرفه‌ای ثبت نشده"}</p></div>
+        <div className="result-details"><span><MapPin /><bdi>{item.location ?? "محل سکونت نامشخص"}</bdi></span><span><BriefcaseBusiness />{item.years_experience_total === null ? "سابقه نامشخص" : `${item.years_experience_total.toLocaleString("fa-IR")} سال سابقه`}</span></div>
+        <Button variant="ghost" size="sm" render={<Link to={`/candidates/${item.id}`} />} nativeButton={false}>پرونده<ArrowLeft data-icon="inline-end" /></Button>
+      </article>)}</div>}
+      {started && !items.length && !loading && !error && <Empty className="legacy-paper py-12"><EmptyHeader><EmptyMedia variant="icon"><Search /></EmptyMedia><EmptyTitle>کاندیدایی با این شرط‌ها پیدا نشد</EmptyTitle><EmptyDescription>واژه‌ها یا شرط‌های جست‌وجو را تغییر دهید و دوباره امتحان کنید.</EmptyDescription></EmptyHeader>{softest && <EmptyContent><Button variant="outline" onClick={() => void run({ dsl, relax: true })}>کنار گذاشتن «{filterLabel(softest)}»</Button></EmptyContent>}</Empty>}
+      {!started && <div className="search-idle">
+        <h2 className="section-heading">فضای کار استخدام، یک‌جا در دسترس شما</h2>
+        <div className="workspace-shortcuts">
+          {[{ path: "/candidates", title: "بانک کاندیداها", description: "پروفایل‌ها، مهارت‌ها و سابقه هر فرد", icon: Users }, { path: "/roles", title: "فرصت‌های شغلی", description: "مدیریت فرصت‌ها و پیگیری مسیر جذب", icon: BriefcaseBusiness }, { path: "/review", title: "صف بازبینی", description: "بررسی رزومه‌های نیازمند توجه شما", icon: Inbox }].map(({ path, title, description, icon: Icon }) => <Link key={path} to={path} className="workspace-shortcut"><span className="shortcut-icon"><Icon /></span><div><strong>{title}</strong><p>{description}</p></div><ArrowLeft aria-hidden="true" /></Link>)}
+        </div>
+        <div className="search-guidance"><Lightbulb aria-hidden="true" /><div><strong>یک جست‌وجوی خوب، از توضیح روشن شروع می‌شود.</strong><p>مهارت، عنوان شغلی یا تجربه موردنیاز را بنویسید. بعد از جست‌وجو می‌توانید شرط‌ها را ببینید و ویرایش کنید. بررسی نهایی و تصمیم استخدام با شماست.</p></div></div>
+      </div>}
+    </div>
+    {editing && <FilterEditor key={editing.id} filter={editing} onClose={() => setEditing(null)} onSave={value => { setEditing(null); update({ ...dsl, filters: [...dsl.filters.filter(f => f.id !== value.id), value] }) }} />}
   </>
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { Link } from "react-router"
 import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogContent,
-  DialogActions, DialogTitle, Paper, Stack, Tab, Tabs, Typography } from "@mui/material"
+  DialogActions, DialogTitle, Paper, Stack, Tab, Tabs, Typography } from "@/components/ui-compat"
 import { ProfileEditor } from "@/components/profile-editor"
 import { fetchReview, fetchReviewDetail, persianError, resolveReview,
   type CandidateProfile, type ReviewDetail, type ReviewList } from "@/lib/api"

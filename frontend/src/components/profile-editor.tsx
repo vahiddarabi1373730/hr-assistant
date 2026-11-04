@@ -13,7 +13,7 @@ import {
   Stack,
   TextField,
   Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import { ChevronDown, Plus, Trash2 } from "lucide-react"
 import type { CandidateProfile } from "@/lib/api"
 import { reviewProfile } from "@/lib/review"

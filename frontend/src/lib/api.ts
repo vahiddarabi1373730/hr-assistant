@@ -341,8 +341,10 @@ export async function uploadResume(file: File): Promise<UploadResult> {
   return result
 }
 
-export async function fetchCandidates(): Promise<CandidateSummary[]> {
-  const res = await request("/api/candidates")
+export async function fetchCandidates(query?: string, signal?: AbortSignal): Promise<CandidateSummary[]> {
+  const params = new URLSearchParams()
+  if (query?.trim()) params.set("query", query.trim())
+  const res = await request(`/api/candidates${params.size ? `?${params}` : ""}`, { signal })
   if (!res.ok) await throwApiError(res)
   const body = (await res.json()) as { items: CandidateSummary[] }
   return body.items

@@ -24,7 +24,7 @@ import {
   TextField,
   Tooltip,
   Typography,
-} from "@mui/material"
+} from "@/components/ui-compat"
 import {
   Download,
   Eye,

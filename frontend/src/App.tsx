@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react"
 import { Navigate, Outlet, Route, Routes } from "react-router"
-import { Box, CircularProgress } from "@mui/material"
+import { Box, CircularProgress } from "@/components/ui-compat"
 import { useAuth } from "@/auth"
 import { AppShell } from "@/components/shell"
 import { LoginPage } from "@/pages/login"

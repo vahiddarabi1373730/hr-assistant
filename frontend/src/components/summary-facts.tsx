@@ -1,5 +1,4 @@
-import Box from "@mui/material/Box"
-import Typography from "@mui/material/Typography"
+import { Box, Typography } from "@/components/ui-compat"
 import type { SummaryCategory } from "@/lib/api"
 import { formatResumeDate } from "@/lib/profile"
 
