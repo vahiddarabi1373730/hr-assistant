@@ -170,7 +170,7 @@ export function PipelinePage() {
       </Stack>
       {/* Keep the stage order RTL independently of the surrounding page direction. */}
       <Box sx={{ overflowX: "auto", pb: 2 }} aria-label="ستون‌های مراحل استخدام">
-        <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", height: "clamp(420px, calc(100vh - 100px), 680px)" }}>
+        <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", height: 460 }}>
           {[...ending, ...live].map(stage => {
             const collapsed = ending.some(item => item.id === stage.id) && !expanded.includes(stage.id)
             const cards = applications.filter(application => application.stage_id === stage.id)
