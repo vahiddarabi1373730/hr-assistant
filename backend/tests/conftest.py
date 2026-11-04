@@ -8,13 +8,19 @@ and ``HR_TEST_APP_URL`` at its postgres service container.
 
 import os
 import uuid
+from platform import system
 from urllib.parse import urlsplit, urlunsplit
 
 TEST_DB_NAME = "hr_test"
 
-_ADMIN_BASE = os.environ.get(
-    "HR_TEST_ADMIN_URL", "postgresql+asyncpg://peyman@/postgres?host=/var/run/postgresql"
-)
+
+def _default_admin_base_url() -> str:
+    if system() == "Windows":
+        return "postgresql+asyncpg://postgres@127.0.0.1:5432/postgres"
+    return "postgresql+asyncpg://peyman@/postgres?host=/var/run/postgresql"
+
+
+_ADMIN_BASE = os.environ.get("HR_TEST_ADMIN_URL", _default_admin_base_url())
 
 
 def _with_db(url: str, dbname: str) -> str:

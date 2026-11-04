@@ -1,9 +1,16 @@
 """Application settings (env-prefixed ``HR_``, optional ``.env`` in backend/)."""
 
+from platform import system
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_local_migration_database_url() -> str:
+    if system() == "Windows":
+        return "postgresql+asyncpg://postgres@127.0.0.1:5432/postgres"
+    return "postgresql+asyncpg://peyman@/postgres?host=/var/run/postgresql"
 
 
 class Settings(BaseSettings):
@@ -12,7 +19,7 @@ class Settings(BaseSettings):
     # Connection the app itself uses: non-superuser role created by migration 0002.
     app_database_url: str = "postgresql+asyncpg://hr_app:hr_app_dev@127.0.0.1:5432/hr_dev"
     # Privileged connection used only by Alembic (schema owner runs migrations).
-    migration_database_url: str = "postgresql+asyncpg://peyman@/postgres?host=/var/run/postgresql"
+    migration_database_url: str = _default_local_migration_database_url()
     # Password assigned to the hr_app login role when migrations (re)create it.
     app_db_password: str = "hr_app_dev"
 

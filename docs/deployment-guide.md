@@ -38,6 +38,8 @@ HR_APP_DATABASE_URL=postgresql+asyncpg://hr_app:hr_app_dev@127.0.0.1:5432/hr_dev
 HR_COOKIE_SECURE=false
 ```
 
+توجه: روی Windows نباید از مسیر یونیکس PostgreSQL مثل `/var/run/postgresql` استفاده کرد؛ این مسیر فقط برای peer-auth در Linux/macOS معتبر است. برای توسعهٔ محلی روی ویندوز، URLهای TCP روی `127.0.0.1:5432` و نام‌کاربری مناسب مثل `postgres` یا نقش محلی پروژه باید استفاده شوند.
+
 در production، همین نام متغیرها در Environment سرویس Render به Neon اشاره می‌کنند. فایل `backend/.env` نباید commit یا upload شود.
 
 `HR_MIGRATION_DATABASE_URL` اتصال privileged برای Alembic است و باید hostname مستقیم Neon، بدون `-pooler`، داشته باشد. `HR_APP_DATABASE_URL` اتصال برنامه با role محدود `hr_app` است و می‌تواند hostname دارای `-pooler` داشته باشد.
