@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography,
 } from "@/components/ui-compat"
-import { ArrowLeftRight, CalendarDays, History, RefreshCw, StickyNote } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
 import { CandidatePicker } from "@/components/candidate-picker"
 import { InterviewSchedulerDialog } from "@/components/interview-scheduler-dialog"
@@ -133,9 +133,7 @@ export function PipelinePage() {
 
   return <>
     <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ justifyContent: "space-between", mb: 3 }}>
-      <Box><Typography variant="h4">{roleId ? selectedRole?.title ?? "فرصت شغلی" : "برد استخدام"}</Typography>
-        <Typography color="text.secondary" sx={{ mt: 1, fontSize: 13 }}>هر کارت، یک کاندیدا در یک فرصت شغلی است. جابه‌جایی فقط با تصمیم شما ثبت می‌شود.</Typography>
-      </Box>
+     <Typography variant="h4">{roleId ? selectedRole?.title ?? "فرصت شغلی" : "برد استخدام"}</Typography>
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
         <Button component={Link} to="/roles" variant="outlined">فرصت‌های شغلی</Button>
         <Button variant="outlined" onClick={() => setCreating(true)}>فرصت جدید</Button>
@@ -169,7 +167,6 @@ export function PipelinePage() {
           <MenuItem value="all">همهٔ مسئول‌ها</MenuItem><MenuItem value="unassigned">بدون مسئول</MenuItem>
           {owners.map(owner => <MenuItem key={owner.id} value={owner.id}>{ownerLabel(owners, owner.id)}</MenuItem>)}
         </TextField>
-        <Typography color="text.secondary" sx={{ alignSelf: "center", fontSize: 12 }}>{applications.length.toLocaleString("fa-IR")} درخواست · برای لمس و صفحه‌کلید از «جابه‌جایی» استفاده کنید.</Typography>
       </Stack>
       {/* Keep the stage order RTL independently of the surrounding page direction. */}
       <Box sx={{ overflowX: "auto", pb: 2 }} aria-label="ستون‌های مراحل استخدام">
@@ -204,17 +201,17 @@ export function PipelinePage() {
                   <Typography dir="auto" sx={{ fontSize: 12, mt: 0.5, mb: 1 }}>{application.headline ?? "عنوان حرفه‌ای ثبت نشده"}</Typography>
                   <Typography dir="auto" color="text.secondary" sx={{ fontSize: 11, mb: 1 }}>{application.role_title}</Typography>
                    <OwnerBadge owners={owners} id={application.owner_id} />
-                   <Link className="pipeline-card-link pipeline-card-notes-link" to={`/candidates/${application.candidate_id}?tab=notes&application=${application.id}`}><StickyNote data-icon="inline-start" />یادداشت‌های درخواست</Link>
                   <div className="pipeline-card-actions">
                     <Stack direction="row" sx={{ gap: 0.75, flexWrap: "nowrap", width: "100%" }}>
-                      <Button variant="outlined" size="small" disabled={busy} startIcon={<ArrowLeftRight />} onClick={() => startMove(application)}
+                      <Button variant="outlined" size="small" disabled={busy} onClick={() => startMove(application)}
                         sx={{ flex: "1 1 0", minWidth: 0, px: 0.75, fontSize: 11, whiteSpace: "nowrap" }}>جابه‌جایی</Button>
-                      <Button variant="outlined" size="small" disabled={busy} startIcon={<History />} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}
+                      <Button variant="outlined" size="small" disabled={busy} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}
                         sx={{ flex: "1 1 0", minWidth: 0, px: 0.75, fontSize: 11, whiteSpace: "nowrap" }}>مسئول و تاریخچه</Button>
                     </Stack>
-                    <Button variant="text" color="primary" size="small" disabled={busy} startIcon={<CalendarDays />} onClick={() => setScheduling(application)}
-                      sx={{ justifyContent: "flex-start", textDecoration: "underline", textUnderlineOffset: "3px" }}>برنامه‌ریزی مصاحبه</Button>
-                    <Button size="small" color="error" disabled={busy} onClick={() => {
+                    <Button component={Link} to={`/candidates/${application.candidate_id}?tab=notes&application=${application.id}`}
+                      variant="outlined" size="small" fullWidth>یادداشت‌های درخواست</Button>
+                    <Button variant="outlined" size="small" fullWidth disabled={busy} onClick={() => setScheduling(application)}>برنامه‌ریزی مصاحبه</Button>
+                    <Button size="small" color="error" fullWidth disabled={busy} onClick={() => {
                       setDeletionError(null)
                       setScheduling(null)
                       setDeleting(application)
