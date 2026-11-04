@@ -3,11 +3,15 @@
 import asyncio
 
 import pytest
-from sqlalchemy import text
+from fastapi import HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
+from app import pipeline as pipeline_routes
 from app.main import app
+from app.models import CandidateApplication, CandidateNote, GoogleConnection, Interview
 from app.parsing.llm import get_extractor
+from app.rls import set_current_org
 
 from .factories import extraction_payload
 from .test_ingest_api import PASSWORD, signup, upload
@@ -494,3 +498,124 @@ async def test_resume_updates_and_role_owner_edits_never_move_applications(api_c
     assert board["applications"][0]["role_title"] == "Renamed"
     detail = (await api_client.get(f"/api/applications/{application['id']}")).json()
     assert len(detail["activity"]) == 2
+
+
+async def setup_booked_application_for_deletion(api_client, app_session_factory, email):
+    await signup(api_client, email, "Deletion test")
+    me = (await api_client.get("/api/me")).json()
+    role = await open_role(api_client)
+    install([extraction_payload()])
+    candidate_id = (await upload(api_client, b"Deletion candidate")).json()["candidate"]["id"]
+    application = (
+        await api_client.post(
+            f"/api/roles/{role}/applications", json={"candidate_id": candidate_id}
+        )
+    ).json()
+    stages = (await api_client.get("/api/pipeline/stages")).json()["items"]
+    hired = next(stage for stage in stages if stage["kind"] == "hired")
+    moved = await api_client.post(
+        f"/api/applications/{application['id']}/stage",
+        json={"stage_id": hired["id"], "expected_stage_id": application["stage_id"]},
+    )
+    assert moved.status_code == 200
+
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        note = CandidateNote(
+            org_id=me["org"]["id"],
+            candidate_id=candidate_id,
+            application_id=application["id"],
+            author_id=me["id"],
+            body="Preserve this note",
+        )
+        session.add(
+            GoogleConnection(
+                org_id=me["org"]["id"],
+                user_id=me["id"],
+                encrypted_refresh_token=b"encrypted",
+            )
+        )
+        interview = Interview(
+            org_id=me["org"]["id"],
+            application_id=application["id"],
+            proposer_user_id=me["id"],
+            title="Final interview",
+            duration_minutes=60,
+            status="booked",
+            booking_token_hash="a" * 64,
+            encrypted_booking_token=b"encrypted",
+            google_event_id="google-event-to-cancel",
+        )
+        session.add_all((note, interview))
+        await session.commit()
+        note_id = str(note.id)
+    return me, application, candidate_id, note_id
+
+
+async def test_delete_application_preserves_candidate_notes_and_cancels_calendar(
+    api_client, app_session_factory, monkeypatch
+):
+    me, application, candidate_id, note_id = await setup_booked_application_for_deletion(
+        api_client, app_session_factory, "delete-success@example.com"
+    )
+    canceled_events = []
+
+    async def fake_access_token(session, connection):
+        assert connection.user_id == me["id"]
+        return "calendar-token"
+
+    async def fake_delete_calendar_event(token, event_id):
+        assert token == "calendar-token"
+        canceled_events.append(event_id)
+
+    monkeypatch.setattr(pipeline_routes, "access_token", fake_access_token)
+    monkeypatch.setattr(pipeline_routes, "delete_calendar_event", fake_delete_calendar_event)
+
+    response = await api_client.delete(f"/api/applications/{application['id']}")
+    assert response.status_code == 204, response.text
+    assert canceled_events == ["google-event-to-cancel"]
+    assert (
+        await api_client.get(f"/api/applications/{application['id']}")
+    ).status_code == 404
+    candidates = (await api_client.get("/api/candidates")).json()["items"]
+    assert any(item["id"] == candidate_id for item in candidates)
+
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        note = await session.get(CandidateNote, note_id)
+        assert note is not None
+        assert note.application_id is None
+        assert await session.scalar(
+            select(Interview.id).where(Interview.application_id == application["id"])
+        ) is None
+        assert await session.scalar(
+            select(CandidateApplication.id).where(CandidateApplication.id == application["id"])
+        ) is None
+
+
+async def test_delete_application_stops_when_google_cancellation_fails(
+    api_client, app_session_factory, monkeypatch
+):
+    me, application, _, note_id = await setup_booked_application_for_deletion(
+        api_client, app_session_factory, "delete-failure@example.com"
+    )
+
+    async def fake_access_token(session, connection):
+        return "calendar-token"
+
+    async def fail_delete_calendar_event(token, event_id):
+        raise HTTPException(502, "GOOGLE_API_FAILED")
+
+    monkeypatch.setattr(pipeline_routes, "access_token", fake_access_token)
+    monkeypatch.setattr(pipeline_routes, "delete_calendar_event", fail_delete_calendar_event)
+
+    response = await api_client.delete(f"/api/applications/{application['id']}")
+    assert response.status_code == 502
+    assert response.json()["detail"] == "GOOGLE_API_FAILED"
+    assert (
+        await api_client.get(f"/api/applications/{application['id']}")
+    ).status_code == 200
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        note = await session.get(CandidateNote, note_id)
+        assert note.application_id == application["id"]

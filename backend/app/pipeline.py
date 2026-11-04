@@ -5,13 +5,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import load_only
 
+from app.google_calendar import access_token, delete_calendar_event
 from app.models import (
     ApplicationActivity,
     Candidate,
     CandidateApplication,
+    CandidateNote,
+    GoogleConnection,
+    Interview,
     Membership,
     OrgActivity,
     PipelineStage,
@@ -226,6 +230,64 @@ async def application_for(session, org_id, application_id):
     if application is None:
         raise HTTPException(404, "APPLICATION_NOT_FOUND")
     return application
+
+
+@router.delete("/applications/{application_id}", status_code=204)
+async def delete_application(
+    application_id: UUID, ctx: TenantContextDep, session: SessionDep
+) -> None:
+    await lock_org(session, ctx.org.id)
+    application = await application_for(session, ctx.org.id, application_id)
+    interviews = (
+        await session.scalars(
+            select(Interview).where(
+                Interview.org_id == ctx.org.id,
+                Interview.application_id == application.id,
+            )
+        )
+    ).all()
+    connections: dict[UUID, GoogleConnection | None] = {}
+    for interview in interviews:
+        if interview.status == "booked" and not interview.google_event_id:
+            raise HTTPException(409, "INTERVIEW_CANCELLATION_UNAVAILABLE")
+        if not interview.google_event_id:
+            continue
+        if interview.proposer_user_id not in connections:
+            connections[interview.proposer_user_id] = await session.scalar(
+                select(GoogleConnection).where(
+                    GoogleConnection.org_id == ctx.org.id,
+                    GoogleConnection.user_id == interview.proposer_user_id,
+                )
+            )
+        connection = connections[interview.proposer_user_id]
+        if connection is None:
+            raise HTTPException(409, "INTERVIEW_CANCELLATION_UNAVAILABLE")
+        await delete_calendar_event(
+            await access_token(session, connection), interview.google_event_id
+        )
+
+    await session.execute(
+        update(CandidateNote)
+        .where(
+            CandidateNote.org_id == ctx.org.id,
+            CandidateNote.application_id == application.id,
+        )
+        .values(application_id=None)
+    )
+    session.add(
+        OrgActivity(
+            org_id=ctx.org.id,
+            actor_user_id=ctx.user.id,
+            event_type="application_deleted",
+            data={
+                "application_id": str(application.id),
+                "candidate_id": str(application.candidate_id),
+                "role_id": str(application.role_id),
+            },
+        )
+    )
+    await session.delete(application)
+    await session.commit()
 
 
 async def stage_for(session, org_id, stage_id):

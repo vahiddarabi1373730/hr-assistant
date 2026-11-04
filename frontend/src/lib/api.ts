@@ -139,6 +139,9 @@ const PERSIAN_ERRORS: Record<string, string> = {
   INVALID_ROLE_TRANSITION: "این تغییر وضعیت مجاز نیست؛ صفحه را تازه کنید.",
   ROLE_TITLE_REQUIRED: "عنوان فرصت شغلی را وارد کنید.",
   APPLICATION_NOT_FOUND: "درخواست شغلی پیدا نشد؛ ممکن است ادغام شده باشد.",
+  INTERVIEW_CANCELLATION_UNAVAILABLE: "لغو رویداد تقویم ممکن نشد؛ اتصال Google مصاحبه‌کننده را بررسی کنید و دوباره تلاش کنید.",
+  GOOGLE_API_FAILED: "Google رویداد تقویم را لغو نکرد؛ درخواست حذف انجام نشد.",
+  GOOGLE_RECONNECT_REQUIRED: "اتصال Google نیاز به اتصال دوباره دارد؛ پس از اتصال، حذف را دوباره انجام دهید.",
   APPLICATION_CHANGED_REFRESH: "مرحلهٔ این درخواست تغییر کرده است؛ صفحه را تازه کنید و دوباره تصمیم بگیرید.",
   STAGE_NOT_FOUND: "مرحله پیدا نشد؛ صفحه را تازه کنید.",
   REASON_ONLY_FOR_REJECTION: "دلیل رد فقط برای مرحلهٔ ردشده قابل ثبت است.",
@@ -403,6 +406,10 @@ export const fetchRoles = (signal?: AbortSignal) => pipelineRequest<{ items: Pip
 export const createRole = (title: string, owner_id: string | null) => pipelineRequest<PipelineRole>("roles", "POST", { title, owner_id })
 export const editRole = (id: string, changes: Partial<Pick<PipelineRole, "title" | "status" | "owner_id">>) => pipelineRequest<PipelineRole>(`roles/${id}`, "PATCH", changes)
 export const addToRole = (role: string, candidate_id: string, owner_id: string | null = null) => pipelineRequest<{ id: string }>(`roles/${role}/applications`, "POST", { candidate_id, owner_id })
+export async function deleteApplication(id: string): Promise<void> {
+  const response = await request(`/api/applications/${id}`, { method: "DELETE" })
+  if (!response.ok) await throwApiError(response)
+}
 export const moveApplication = (application: PipelineApplication, stage_id: string, context: string, reason: string | null) => pipelineRequest(`applications/${application.id}/stage`, "POST", { stage_id, expected_stage_id: application.stage_id, context, reason })
 export const assignApplication = (id: string, owner_id: string | null) => pipelineRequest(`applications/${id}/owner`, "PATCH", { owner_id })
 export const fetchApplication = (id: string, signal?: AbortSignal) => pipelineRequest<{ activity: ApplicationEvent[]; notes: CandidateNote[] }>(`applications/${id}`, "GET", undefined, signal)

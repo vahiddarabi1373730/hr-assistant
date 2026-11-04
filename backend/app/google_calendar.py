@@ -8,7 +8,7 @@ import base64
 import json
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -124,6 +124,19 @@ async def google_json(token: str, method: str, url: str, payload: dict | None = 
     if response.is_error:
         raise HTTPException(502, "GOOGLE_API_FAILED")
     return response.json()
+
+
+async def delete_calendar_event(token: str, event_id: str) -> None:
+    url = (
+        "https://www.googleapis.com/calendar/v3/calendars/primary/events/"
+        f"{quote(event_id, safe='')}?sendUpdates=all"
+    )
+    async with httpx.AsyncClient(timeout=25) as client:
+        response = await client.delete(url, headers={"Authorization": f"Bearer {token}"})
+    if response.status_code in (404, 410):
+        return
+    if response.is_error:
+        raise HTTPException(502, "GOOGLE_API_FAILED")
 
 
 def booking_message(booking_url: str, candidate_name: str, title: str) -> str:

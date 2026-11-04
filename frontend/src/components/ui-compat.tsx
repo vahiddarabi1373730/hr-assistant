@@ -37,12 +37,13 @@ function subscribe(listener: () => void) {
 }
 const snapshot = () => breakpoints.filter(value => window.innerWidth >= value).length - 1
 const colors: Record<string, string> = {
-  "primary.main": "var(--primary)", "primary.light": "var(--accent)", "primary.dark": "var(--sidebar)",
+  "primary.main": "var(--primary)", "primary.light": "var(--primary-light)", "primary.dark": "var(--sidebar)",
   "text.primary": "var(--foreground)", "text.secondary": "var(--muted-foreground)", "text.disabled": "var(--muted-foreground)",
   "background.paper": "var(--card)", "background.default": "var(--background)", "divider": "var(--border)",
   "error.main": "var(--destructive)", "error": "var(--destructive)", "success.main": "var(--success)", "warning.main": "var(--warning)",
   "#1565c0": "var(--primary)", "#eff6ff": "var(--accent)", "#eaf2fc": "var(--accent)",
-  "#f3f7fe": "var(--accent)", "#f8fafc": "var(--background)", "#edf0f4": "var(--secondary)", "#cbd5e1": "var(--input)",
+  "#f3f7fe": "var(--accent)", "#f8fafc": "var(--background)", "#edf0f4": "var(--secondary)", "#edf3fb": "var(--muted)",
+  "#cbd5e1": "var(--input)", "#c9dcf6": "var(--border)", "#aab6c5": "var(--input)",
 }
 const spacing: Record<string, string> = { p: "padding", px: "paddingInline", py: "paddingBlock", pt: "paddingTop", pb: "paddingBottom", pl: "paddingLeft", pr: "paddingRight", m: "margin", mx: "marginInline", my: "marginBlock", mt: "marginTop", mb: "marginBottom", ml: "marginLeft", mr: "marginRight" }
 

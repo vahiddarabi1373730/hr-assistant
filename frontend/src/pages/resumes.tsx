@@ -886,7 +886,7 @@ export function ResumesPage() {
               <CircularProgress size={28} aria-label="بارگذاری فهرست" />
             ) : (
               <Stack spacing={1.5} sx={{ alignItems: "center" }}>
-                <FileText size={35} color="#94a3b8" />
+                <FileText size={35} color="var(--muted-foreground)" />
                 <Typography sx={{ fontWeight: 650 }}>
                   {search
                     ? "رزومه‌ای مطابق جست‌وجو پیدا نشد"

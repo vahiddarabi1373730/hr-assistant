@@ -335,7 +335,7 @@ export function CandidatePage() {
               }}
             >
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                <Sparkles size={20} color="#1565c0" />
+                <Sparkles size={20} color="var(--primary)" />
                 <Typography variant="h6">خلاصهٔ هوشمند رزومه</Typography>
               </Stack>
               <Button

@@ -4,12 +4,13 @@ import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography,
 } from "@/components/ui-compat"
+import { ArrowLeftRight, History, StickyNote } from "lucide-react"
 import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
 import { CandidatePicker } from "@/components/candidate-picker"
 import { InterviewSchedulerDialog } from "@/components/interview-scheduler-dialog"
 import { ownerLabel, roleStatusLabels } from "@/lib/pipeline"
 import {
-  addToRole, assignApplication, editRole, fetchApplication, fetchCandidates,
+  addToRole, assignApplication, deleteApplication, editRole, fetchApplication, fetchCandidates,
   fetchPipelineBoard, fetchPipelineOwners, moveApplication, persianError,
   type ApplicationEvent, type CandidateSummary, type PipelineApplication,
   type PipelineBoard, type PipelineOwner,
@@ -45,6 +46,8 @@ export function PipelinePage() {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [sourcing, setSourcing] = useState(false)
   const [scheduling, setScheduling] = useState<PipelineApplication | null>(null)
+  const [deleting, setDeleting] = useState<PipelineApplication | null>(null)
+  const [deletionError, setDeletionError] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<CandidateSummary[] | null>(null)
   const [candidateId, setCandidateId] = useState("")
   const [sourceRole, setSourceRole] = useState("")
@@ -92,6 +95,24 @@ export function PipelinePage() {
     try { await action(); await load(); done?.() }
     catch (cause) { setError(persianError(cause)) }
     finally { setBusy(false) }
+  }
+  async function removeApplication() {
+    if (!deleting) return
+    const target = deleting
+    setBusy(true); setDeletionError(null)
+    try {
+      await deleteApplication(target.id)
+      setData(previous => previous ? {
+        ...previous,
+        applications: previous.applications.filter(application => application.id !== target.id),
+      } : previous)
+      setDeleting(null)
+      await load().catch(cause => setError(persianError(cause)))
+    } catch (cause) {
+      setDeletionError(persianError(cause))
+    } finally {
+      setBusy(false)
+    }
   }
   function startMove(application: PipelineApplication, stage = "") {
     setMoving(application); setDestination(stage); setContext(""); setReason(""); setError(null)
@@ -152,7 +173,7 @@ export function PipelinePage() {
       </Stack>
       {/* Explicit CSS grid direction fixes physical order independently of RTL text/Emotion flipping. */}
       <Box sx={{ overflowX: "auto", pb: 2 }} aria-label="ستون‌های مراحل استخدام">
-        <Box style={{ direction: "rtl" }} sx={{ display: "grid", gridAutoFlow: "column", gridAutoColumns: "max-content", gap: 2, alignItems: "start", minHeight: 440 }}>
+        <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", minHeight: 440 }}>
           {[...ending, ...live].map(stage => {
             const collapsed = ending.some(item => item.id === stage.id) && !expanded.includes(stage.id)
             const cards = applications.filter(application => application.stage_id === stage.id)
@@ -163,7 +184,7 @@ export function PipelinePage() {
                 const application = applications.find(item => item.id === id)
                 setDragging(null)
                 if (application && application.stage_id !== stage.id) startMove(application, stage.id)
-              }} sx={{ width: collapsed ? 68 : 278, minHeight: 420, bgcolor: collapsed ? "#edf0f4" : "#f8fafc", borderColor: dragging ? "primary.light" : "divider" }}>
+              }} sx={{ width: collapsed ? 68 : 278, flex: "0 0 auto", minHeight: 420, bgcolor: collapsed ? "#edf0f4" : "#f8fafc", borderColor: dragging ? "primary.light" : "divider" }}>
               <Box sx={{ p: collapsed ? 1 : 2, borderBottom: 1, borderColor: "divider", minHeight: 66 }}>
                 {ending.some(item => item.id === stage.id) ? <Button fullWidth aria-expanded={!collapsed}
                   aria-label={`${collapsed ? "باز کردن" : "بستن"} ستون ${stage.name}؛ ${cards.length.toLocaleString("fa-IR")} درخواست`}
@@ -176,19 +197,26 @@ export function PipelinePage() {
               </Box>
               {!collapsed && <Stack spacing={1.5} sx={{ p: 1.5 }}>
                 {!cards.length && <Typography color="text.secondary" sx={{ p: 1, fontSize: 12 }}>درخواستی در این مرحله نیست.</Typography>}
-                {cards.map(application => <Paper key={application.id} variant="outlined" draggable={!busy}
+                {cards.map(application => <Paper key={application.id} className="pipeline-application-card" variant="outlined" draggable={!busy}
                   onDragStart={event => { event.dataTransfer.setData("application-id", application.id); event.dataTransfer.effectAllowed = "move"; setDragging(application.id) }}
                   onDragEnd={() => setDragging(null)} sx={{ p: 2, bgcolor: "background.paper", borderInlineStart: "3px solid", borderInlineStartColor: application.owner_id ? "primary.main" : "#aab6c5", overflowWrap: "anywhere" }}>
-                  <Button component={Link} to={`/candidates/${application.candidate_id}`} sx={{ p: 0, fontWeight: 750, justifyContent: "start", textAlign: "start" }}><span dir="auto">{application.full_name}</span></Button>
+                  <Link className="pipeline-card-link" to={`/candidates/${application.candidate_id}`} dir="auto">{application.full_name}</Link>
                   <Typography dir="auto" sx={{ fontSize: 12, mt: 0.5, mb: 1 }}>{application.headline ?? "عنوان حرفه‌ای ثبت نشده"}</Typography>
                   <Typography dir="auto" color="text.secondary" sx={{ fontSize: 11, mb: 1 }}>{application.role_title}</Typography>
                    <OwnerBadge owners={owners} id={application.owner_id} />
-                   <Button component={Link} to={`/candidates/${application.candidate_id}?tab=notes&application=${application.id}`} size="small" sx={{ mt: 1 }}>یادداشت‌های درخواست</Button>
-                  <Stack direction="row" sx={{ mt: 1, justifyContent: "space-between" }}>
-                    <Button size="small" disabled={busy} onClick={() => startMove(application)}>جابه‌جایی</Button>
-                    <Button size="small" disabled={busy} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}>مسئول و تاریخچه</Button>
-                  </Stack>
-                  <Button size="small" disabled={busy} sx={{ mt: 1 }} onClick={() => setScheduling(application)}>برنامه‌ریزی مصاحبه</Button>
+                   <Link className="pipeline-card-link pipeline-card-notes-link" to={`/candidates/${application.candidate_id}?tab=notes&application=${application.id}`}><StickyNote data-icon="inline-start" />یادداشت‌های درخواست</Link>
+                  <div className="pipeline-card-actions">
+                    <Stack direction="row" sx={{ gap: 1, flexWrap: "wrap" }}>
+                      <Button variant="outlined" size="small" disabled={busy} startIcon={<ArrowLeftRight />} onClick={() => startMove(application)}>جابه‌جایی</Button>
+                      <Button variant="outlined" size="small" disabled={busy} startIcon={<History />} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}>مسئول و تاریخچه</Button>
+                    </Stack>
+                    <Button size="small" disabled={busy} onClick={() => setScheduling(application)}>برنامه‌ریزی مصاحبه</Button>
+                    <Button size="small" color="error" disabled={busy} onClick={() => {
+                      setDeletionError(null)
+                      setScheduling(null)
+                      setDeleting(application)
+                    }}>حذف درخواست</Button>
+                  </div>
                 </Paper>)}
               </Stack>}
             </Paper>
@@ -235,6 +263,26 @@ export function PipelinePage() {
         </Box>)}
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setInspecting(null)} disabled={busy}>بستن</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(deleting)} onClose={busy ? undefined : () => setDeleting(null)} fullWidth maxWidth="sm">
+      <DialogTitle>حذف درخواست {deleting?.full_name}</DialogTitle>
+      <DialogContent><Stack spacing={2} sx={{ pt: 1 }}>
+        {deletionError && <Alert severity="error">{deletionError}</Alert>}
+        <Typography variant="body2">
+          این درخواست برای «{deleting?.role_title}» و تاریخچهٔ مراحل آن برای همیشه حذف می‌شود.
+          پروفایل و رزومهٔ کاندیدا باقی می‌ماند و یادداشت‌ها حفظ می‌شوند، اما از این درخواست جدا خواهند شد.
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          مصاحبه‌ها و لینک رزرو نامعتبر می‌شوند. اگر مصاحبه در Google Calendar رزرو شده باشد،
+          رویداد لغو و دعوت‌شدگان باخبر می‌شوند. ایمیل‌های قبلاً ارسال‌شده قابل پس‌گرفتن نیستند.
+        </Typography>
+      </Stack></DialogContent>
+      <DialogActions sx={{ p: 3 }}>
+        <Button disabled={busy} onClick={() => setDeleting(null)}>انصراف</Button>
+        <Button color="error" disabled={busy || !deleting} onClick={() => void removeApplication()}>
+          {busy ? "در حال حذف…" : "حذف درخواست"}
+        </Button>
+      </DialogActions>
     </Dialog>
     <Dialog open={sourcing} onClose={busy ? undefined : () => setSourcing(false)} fullWidth maxWidth="sm">
       <DialogTitle>افزودن کاندیدا از بانک</DialogTitle>

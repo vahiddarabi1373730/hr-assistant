@@ -177,7 +177,7 @@ export function UploadPage() {
                   alignItems: "center",
                 }}
               >
-                <FileText size={22} color="#64748b" />
+                <FileText size={22} color="var(--muted-foreground)" />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography
                     dir="auto"
