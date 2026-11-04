@@ -104,6 +104,7 @@ export function PipelinePage() {
   const applications = (data?.applications ?? []).filter(application =>
     (roleFilter === "all" || application.role_id === roleFilter) &&
     (ownerFilter === "all" || (ownerFilter === "unassigned" ? !application.owner_id : application.owner_id === ownerFilter)))
+  const openRoles = (data?.roles ?? []).filter(role => role.status === "open")
   const ending = (data?.stages ?? []).filter(stage => ["rejected", "withdrawn"].includes(stage.kind))
   const live = (data?.stages ?? []).filter(stage => !["rejected", "withdrawn"].includes(stage.kind))
   const destinationStage = data?.stages.find(stage => stage.id === destination)
@@ -117,8 +118,8 @@ export function PipelinePage() {
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
         <Button component={Link} to="/roles">فرصت‌های شغلی</Button>
         <Button variant="outlined" onClick={() => setCreating(true)}>فرصت جدید</Button>
-        <Button variant="contained" disabled={!data?.roles.some(role => role.status === "open")} onClick={() => {
-          setSourceRole(selectedRole?.status === "open" ? selectedRole.id : ""); setCandidateId(""); setCandidateSearch(""); setCandidates(null); setSourcing(true)
+        <Button variant="contained" disabled={!openRoles.length} onClick={() => {
+          setSourceRole(selectedRole?.status === "open" ? selectedRole.id : openRoles[0]?.id ?? ""); setCandidateId(""); setCandidateSearch(""); setCandidates(null); setSourcing(true)
         }}>افزودن کاندیدا</Button>
       </Stack>
     </Stack>
@@ -241,7 +242,8 @@ export function PipelinePage() {
         {error && <Alert severity="error">{error}</Alert>}
         <Typography variant="body2" color="text.secondary">افزودن مجدد، درخواست دومی نمی‌سازد. درخواست پایان‌یافته با حفظ مسئول و تاریخچه، به «شناسایی‌شده» بازمی‌گردد.</Typography>
         <TextField select label="فرصت شغلی باز" value={sourceRole} onChange={e => setSourceRole(e.target.value)}>
-          {data?.roles.filter(role => role.status === "open").map(role => <MenuItem key={role.id} value={role.id}>{role.title}</MenuItem>)}
+          <MenuItem value="" disabled>انتخاب فرصت شغلی</MenuItem>
+          {openRoles.map(role => <MenuItem key={role.id} value={role.id}>{role.title}</MenuItem>)}
         </TextField>
         <CandidatePicker query={candidateSearch} onQueryChange={value => { setCandidateSearch(value); setCandidateId("") }}
           candidates={candidateList} selectedId={candidateId} onSelect={setCandidateId} loading={candidateSearch.trim().length >= 2 && candidates === null} />
