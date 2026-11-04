@@ -561,7 +561,7 @@ async def test_delete_application_preserves_candidate_notes_and_cancels_calendar
     canceled_events = []
 
     async def fake_access_token(session, connection):
-        assert connection.user_id == me["id"]
+        assert str(connection.user_id) == me["id"]
         return "calendar-token"
 
     async def fake_delete_calendar_event(token, event_id):
@@ -618,4 +618,4 @@ async def test_delete_application_stops_when_google_cancellation_fails(
     async with app_session_factory() as session:
         await set_current_org(session, me["org"]["id"])
         note = await session.get(CandidateNote, note_id)
-        assert note.application_id == application["id"]
+        assert str(note.application_id) == application["id"]
