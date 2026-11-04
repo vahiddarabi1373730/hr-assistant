@@ -14,6 +14,7 @@ import os
 from collections.abc import Sequence
 
 from alembic import op
+
 from app.config import settings
 
 revision: str = "0002"
