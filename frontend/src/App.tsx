@@ -26,6 +26,7 @@ const IngestionSettingsPage = lazy(() => import("@/pages/ingestion-settings").th
 const PipelinePage = lazy(() => import("@/pages/pipeline").then(module => ({ default: module.PipelinePage })))
 const RolesPage = lazy(() => import("@/pages/roles").then(module => ({ default: module.RolesPage })))
 const SearchPage = lazy(() => import("@/pages/search").then(module => ({ default: module.SearchPage })))
+const BookingPage = lazy(() => import("@/pages/booking").then(module => ({ default: module.BookingPage })))
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -55,6 +56,7 @@ export default function App() {
       }
     >
       <Routes>
+        <Route path="/book/:token" element={<BookingPage />} />
         <Route element={<ProtectedShell />}>
           <Route path="/search" element={<SearchPage />} />
           <Route path="/board" element={<PipelinePage />} />

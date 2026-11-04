@@ -6,6 +6,7 @@ import {
 } from "@/components/ui-compat"
 import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
 import { CandidatePicker } from "@/components/candidate-picker"
+import { InterviewSchedulerDialog } from "@/components/interview-scheduler-dialog"
 import { ownerLabel, roleStatusLabels } from "@/lib/pipeline"
 import {
   addToRole, assignApplication, editRole, fetchApplication, fetchCandidates,
@@ -43,6 +44,7 @@ export function PipelinePage() {
   const [events, setEvents] = useState<ApplicationEvent[] | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [sourcing, setSourcing] = useState(false)
+  const [scheduling, setScheduling] = useState<PipelineApplication | null>(null)
   const [candidates, setCandidates] = useState<CandidateSummary[] | null>(null)
   const [candidateId, setCandidateId] = useState("")
   const [sourceRole, setSourceRole] = useState("")
@@ -185,6 +187,7 @@ export function PipelinePage() {
                     <Button size="small" disabled={busy} onClick={() => startMove(application)}>جابه‌جایی</Button>
                     <Button size="small" disabled={busy} onClick={() => { setEvents(null); setHistoryError(null); setInspecting(application) }}>مسئول و تاریخچه</Button>
                   </Stack>
+                  <Button size="small" disabled={busy} sx={{ mt: 1 }} onClick={() => setScheduling(application)}>برنامه‌ریزی مصاحبه</Button>
                 </Paper>)}
               </Stack>}
             </Paper>
@@ -193,6 +196,7 @@ export function PipelinePage() {
       </Box>
     </>}
     <CreateRoleDialog open={creating} onClose={() => setCreating(false)} owners={owners} onCreated={role => { setCreating(false); void load(); navigate(`/roles/${role.id}`) }} />
+    <InterviewSchedulerDialog applicationId={scheduling?.id ?? null} candidateName={scheduling?.full_name ?? ""} open={Boolean(scheduling)} onClose={() => setScheduling(null)} />
     <Dialog open={Boolean(moving)} onClose={busy ? undefined : () => setMoving(null)} fullWidth maxWidth="sm">
       <DialogTitle>جابه‌جایی {moving?.full_name}</DialogTitle>
       <DialogContent><Stack spacing={3} sx={{ pt: 1 }}>

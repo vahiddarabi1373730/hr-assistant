@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "PROJECT_ROOT=%~dp0"
 set "BACKEND_DIR=%PROJECT_ROOT%backend"
@@ -14,17 +14,7 @@ if not exist "%BACKEND_DIR%\.venv\Scripts\python.exe" (
 )
 
 echo [INFO] Checking the existing backend on port %BACKEND_PORT% ...
-set "BACKEND_PID="
-for /f "tokens=5" %%P in ('netstat -ano -p tcp ^| findstr /R /C:":%BACKEND_PORT% .*LISTENING"') do set "BACKEND_PID=%%P"
-if defined BACKEND_PID (
-    echo [INFO] Stopping the process on port %BACKEND_PORT% (PID %BACKEND_PID%) ...
-    taskkill /F /T /PID %BACKEND_PID% >nul
-    if errorlevel 1 (
-        echo [ERROR] The process on port %BACKEND_PORT% could not be stopped.
-        echo Close the current backend window, then run this file again.
-        goto :failed
-    )
-)
+powershell.exe -NoProfile -Command "$ErrorActionPreference = 'SilentlyContinue'; $listenerPids = @(Get-NetTCPConnection -LocalPort $env:BACKEND_PORT -State Listen | Select-Object -ExpandProperty OwningProcess -Unique); foreach ($pid in $listenerPids) { taskkill.exe /F /T /PID $pid | Out-Null }; Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^python(\.exe)?$' -and $_.CommandLine -match '(?i)uvicorn.*app\.main:app' } | ForEach-Object { taskkill.exe /F /T /PID $_.ProcessId | Out-Null }; exit 0"
 
 powershell.exe -NoProfile -Command "$deadline = (Get-Date).AddSeconds(10); while ((Get-Date) -lt $deadline) { if (-not (Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $env:BACKEND_PORT -State Listen -ErrorAction SilentlyContinue)) { exit 0 }; Start-Sleep -Milliseconds 250 }; exit 1"
 if errorlevel 1 (

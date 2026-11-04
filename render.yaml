@@ -24,6 +24,16 @@ services:
         value: groq
       - key: HR_GROQ_API_KEY
         sync: false
+      - key: HR_GOOGLE_CLIENT_ID
+        sync: false
+      - key: HR_GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: HR_GOOGLE_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: HR_GOOGLE_REDIRECT_URI
+        value: https://hr-assist-backend-4dmd.onrender.com/api/google/callback
+      - key: HR_PUBLIC_FRONTEND_URL
+        value: https://hr-assist-137132cc.netlify.app
       - key: HR_RESUME_EXTRACT_MODEL
         value: qwen/qwen3.8-27b
       - key: HR_RESUME_EXTRACT_MODEL_ESCALATION

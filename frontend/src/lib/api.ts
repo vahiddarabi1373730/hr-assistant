@@ -407,6 +407,16 @@ export const moveApplication = (application: PipelineApplication, stage_id: stri
 export const assignApplication = (id: string, owner_id: string | null) => pipelineRequest(`applications/${id}/owner`, "PATCH", { owner_id })
 export const fetchApplication = (id: string, signal?: AbortSignal) => pipelineRequest<{ activity: ApplicationEvent[]; notes: CandidateNote[] }>(`applications/${id}`, "GET", undefined, signal)
 
+export interface InterviewSlot { id: string; starts_at: string; ends_at: string; status: "offered" | "booked" | "released" }
+export interface Interviewer { id: string; name: string; email: string }
+export interface Interview { id: string; title: string; duration_minutes: number; status: "open" | "booked" | "cancelled"; meet_url: string | null; created_at: string; slots: InterviewSlot[]; interviewers: Interviewer[]; booking_url?: string }
+export interface InterviewDraft { title: string; duration_minutes: number; slots: { starts_at: string; ends_at: string }[]; interviewers: { name: string; email: string }[] }
+export const fetchGoogleConnection = () => pipelineRequest<{ connected: boolean; email: string | null }>("google/connection")
+export const connectGoogle = () => pipelineRequest<{ authorization_url: string }>("google/connect", "POST")
+export const fetchInterviews = (applicationId: string) => pipelineRequest<{ items: Interview[] }>(`applications/${applicationId}/interviews`)
+export const createInterview = (applicationId: string, input: InterviewDraft) => pipelineRequest<Interview>(`applications/${applicationId}/interviews`, "POST", input)
+export const sendInterviewInvitation = (id: string) => pipelineRequest<{ sent: boolean; booking_url: string }>(`interviews/${id}/send-invitation`, "POST")
+
 export interface NotePerson { id: string | null; email: string | null; active: boolean }
 export interface CandidateNote {
   id: string

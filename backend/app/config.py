@@ -70,5 +70,14 @@ class Settings(BaseSettings):
     search_embedding_api_key: str = ""
     search_embedding_base_url: str | None = None
 
+    # --- Google scheduling ---
+    # These values stay server-side.  OAuth access/refresh tokens are encrypted
+    # before persistence with ``google_token_encryption_key``.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://127.0.0.1:8000/api/google/callback"
+    google_token_encryption_key: str = ""
+    public_frontend_url: str = "http://127.0.0.1:5173"
+
 
 settings = Settings()

@@ -508,6 +508,87 @@ class ApplicationActivity(Base):
     )
 
 
+class GoogleConnection(Base):
+    """One encrypted Google OAuth grant per organisation member."""
+
+    __tablename__ = "google_connections"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    google_email: Mapped[str | None] = mapped_column(Text)
+    encrypted_refresh_token: Mapped[bytes] = mapped_column(LargeBinary)
+    encrypted_access_token: Mapped[bytes | None] = mapped_column(LargeBinary)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (UniqueConstraint("org_id", "user_id"),)
+
+
+class Interview(Base):
+    """A human-proposed booking page for one candidate application."""
+
+    __tablename__ = "interviews"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    application_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    proposer_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    title: Mapped[str] = mapped_column(Text)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text, default="open")
+    booking_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    encrypted_booking_token: Mapped[bytes] = mapped_column(LargeBinary)
+    booked_slot_id: Mapped[uuid.UUID | None] = mapped_column()
+    google_event_id: Mapped[str | None] = mapped_column(Text)
+    meet_url: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    booked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("duration_minutes between 15 and 240"),
+        CheckConstraint("status in ('open','booked','cancelled')"),
+        UniqueConstraint("org_id", "id"),
+        ForeignKeyConstraint(
+            ["org_id", "application_id"],
+            ["candidate_applications.org_id", "candidate_applications.id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+
+class InterviewSlot(Base):
+    __tablename__ = "interview_slots"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    interview_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(Text, default="offered")
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at"),
+        CheckConstraint("status in ('offered','booked','released')"),
+        UniqueConstraint("org_id", "id"),
+        ForeignKeyConstraint(
+            ["org_id", "interview_id"], ["interviews.org_id", "interviews.id"], ondelete="CASCADE"
+        ),
+    )
+
+
+class InterviewInterviewer(Base):
+    __tablename__ = "interview_interviewers"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orgs.id", ondelete="CASCADE"), index=True)
+    interview_id: Mapped[uuid.UUID] = mapped_column(index=True)
+    name: Mapped[str] = mapped_column(Text)
+    email: Mapped[str] = mapped_column(Text)
+    __table_args__ = (
+        UniqueConstraint("org_id", "interview_id", "email"),
+        ForeignKeyConstraint(
+            ["org_id", "interview_id"], ["interviews.org_id", "interviews.id"], ondelete="CASCADE"
+        ),
+    )
+
+
 class PipelineStage(Base):
     __tablename__ = "pipeline_stages"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
