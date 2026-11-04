@@ -170,7 +170,7 @@ export function PipelinePage() {
       </Stack>
       {/* Keep the stage order RTL independently of the surrounding page direction. */}
       <Box sx={{ overflowX: "auto", pb: 2 }} aria-label="ستون‌های مراحل استخدام">
-        <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", minHeight: 440 }}>
+        <Box style={{ direction: "rtl" }} sx={{ display: "flex", flexDirection: "row", gap: 2, alignItems: "stretch", height: "clamp(420px, calc(100vh - 100px), 680px)" }}>
           {[...ending, ...live].map(stage => {
             const collapsed = ending.some(item => item.id === stage.id) && !expanded.includes(stage.id)
             const cards = applications.filter(application => application.stage_id === stage.id)
@@ -181,8 +181,8 @@ export function PipelinePage() {
                 const application = applications.find(item => item.id === id)
                 setDragging(null)
                 if (application && application.stage_id !== stage.id) startMove(application, stage.id)
-              }} sx={{ width: collapsed ? 68 : 278, flex: "0 0 auto", minHeight: 420, bgcolor: collapsed ? "#edf0f4" : "#f8fafc", borderColor: dragging ? "primary.light" : "divider" }}>
-              <Box sx={{ p: collapsed ? 1 : 2, borderBottom: 1, borderColor: "divider", minHeight: 66 }}>
+              }} sx={{ width: collapsed ? 68 : 278, flex: "0 0 auto", height: "100%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: collapsed ? "#edf0f4" : "#f8fafc", borderColor: dragging ? "primary.light" : "divider" }}>
+              <Box sx={{ flexShrink: 0, p: collapsed ? 1 : 2, borderBottom: 1, borderColor: "divider", minHeight: 66 }}>
                 {ending.some(item => item.id === stage.id) ? <Button fullWidth aria-expanded={!collapsed}
                   aria-label={`${collapsed ? "باز کردن" : "بستن"} ستون ${stage.name}؛ ${cards.length.toLocaleString("fa-IR")} درخواست`}
                   onClick={() => setExpanded(previous => previous.includes(stage.id) ? previous.filter(id => id !== stage.id) : [...previous, stage.id])}
@@ -192,7 +192,7 @@ export function PipelinePage() {
                   <Typography variant="h6">{stage.name}</Typography><Chip size="small" label={cards.length.toLocaleString("fa-IR")} />
                 </Stack>}
               </Box>
-              {!collapsed && <Stack spacing={1.5} sx={{ p: 1.5 }}>
+              {!collapsed && <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", p: 1.5 }}>
                 {!cards.length && <Typography color="text.secondary" sx={{ p: 1, fontSize: 12 }}>درخواستی در این مرحله نیست.</Typography>}
                 {cards.map(application => <Paper key={application.id} className="pipeline-application-card" variant="outlined" draggable={!busy}
                   onDragStart={event => { event.dataTransfer.setData("application-id", application.id); event.dataTransfer.effectAllowed = "move"; setDragging(application.id) }}
