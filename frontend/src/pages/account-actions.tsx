@@ -110,7 +110,7 @@ export function AccountActionsPage({ mode }: { mode: AccountActionMode }) {
         {(error || missingToken || missingVerificationToken) && <Alert variant="destructive"><AlertDescription>{error ?? "پیوند موردنیاز در نشانی صفحه وجود ندارد."}</AlertDescription></Alert>}
         {message && <Alert><AlertDescription>{message}</AlertDescription></Alert>}
         {mode === "accept-invite" && existingAccount === null && !error && <Spinner aria-label="در حال بررسی دعوت" />}
-        {mode !== "verify-email" && !missingToken && (mode !== "accept-invite" || existingAccount !== null) && <form onSubmit={event => void submit(event)} className="mt-5">
+        {mode !== "verify-email" && !missingToken && !message && (mode !== "accept-invite" || existingAccount !== null) && <form onSubmit={event => void submit(event)} className="mt-5">
           <FieldGroup>
             {mode === "forgot-password" && <Field>
               <FieldLabel htmlFor="account-email">رایانامه</FieldLabel>

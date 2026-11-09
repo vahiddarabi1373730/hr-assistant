@@ -34,7 +34,7 @@ class OrgEvent(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     capacity: Mapped[int | None] = mapped_column(Integer)
     budget_toman: Mapped[int | None] = mapped_column(BigInteger)
-    status: Mapped[str] = mapped_column(Text, default="draft")
+    status: Mapped[str] = mapped_column(Text, default="published")
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     __table_args__ = (

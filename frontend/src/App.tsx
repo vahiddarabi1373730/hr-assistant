@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { Navigate, Outlet, Route, Routes } from "react-router"
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router"
 import { Box, CircularProgress } from "@/components/ui-compat"
 import { useAuth } from "@/auth"
 import { AppShell } from "@/components/shell"
@@ -36,13 +36,17 @@ const AccountActionsPage = lazy(() => import("@/pages/account-actions").then(mod
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
+  const location = useLocation()
   if (loading)
     return (
       <Box sx={{ display: "grid", placeItems: "center", minHeight: "100svh" }}>
         <CircularProgress aria-label="در حال بارگذاری" />
       </Box>
     )
-  if (!me) return <Navigate to="/login" replace />
+  if (!me) {
+    const from = `${location.pathname}${location.search}${location.hash}`
+    return <Navigate to="/login" state={{ from }} replace />
+  }
   return children
 }
 

@@ -27,7 +27,7 @@ async def deliver_event_reminders(session_factory, *, now=None):
                     select(OrgEvent)
                     .where(
                         OrgEvent.org_id == org_id,
-                        OrgEvent.status == "published",
+                        OrgEvent.status.in_(("draft", "published")),
                         OrgEvent.starts_at > now,
                         OrgEvent.starts_at <= now + timedelta(hours=24),
                     )

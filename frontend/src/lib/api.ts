@@ -584,7 +584,7 @@ export interface RoleMatchResult {
   similarity: number | null
   mode: "semantic" | "llm"
 }
-export interface PipelineOwner { id: string; email: string; active: boolean }
+export interface PipelineOwner { id: string; email: string; active: boolean; role?: "admin" | "member" }
 export interface PipelineApplication {
   id: string
   candidate_id: string

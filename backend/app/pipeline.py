@@ -143,15 +143,25 @@ async def stages(ctx: TenantContextDep, session: SessionDep) -> dict:
 
 @router.get("/pipeline/owners")
 async def owners(ctx: TenantContextDep, session: SessionDep) -> dict:
-    users = (
-        await session.scalars(
-            select(User)
-            .join(Membership)
+    rows = (
+        await session.execute(
+            select(User, Membership.role)
+            .join(Membership, Membership.user_id == User.id)
             .where(Membership.org_id == ctx.org.id)
             .order_by(User.email)
         )
     ).all()
-    return {"items": [{"id": u.id, "email": u.email, "active": u.is_active} for u in users]}
+    return {
+        "items": [
+            {
+                "id": user.id,
+                "email": user.email,
+                "active": user.is_active,
+                "role": role.value,
+            }
+            for user, role in rows
+        ]
+    }
 
 
 @router.get("/roles")

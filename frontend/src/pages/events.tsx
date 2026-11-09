@@ -5,7 +5,7 @@ import { EventEditor, EventSelect } from "@/components/event-editor"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { eventDateTime, eventError, eventStatusLabels, fetchEvents, type OrganisationalEvent } from "@/lib/events"
@@ -29,13 +29,13 @@ export function EventsPage() {
   })
   return <div className="mx-auto flex max-w-5xl flex-col gap-7">
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <div><h1 className="text-2xl font-bold">رویدادهای سازمانی</h1><p className="mt-2 max-w-xl text-muted-foreground">از اولین دعوت تا آخرین بازخورد؛ برنامه‌های تیم را همین‌جا هماهنگ کنید.</p></div>
+      <div><h1 className="text-2xl font-bold">رویدادهای سازمانی</h1></div>
       <Button onClick={() => setCreating(true)}><Plus data-icon="inline-start" />رویداد جدید</Button>
     </div>
     <div className="grid gap-3 sm:grid-cols-[1fr_200px]"><Input aria-label="جست‌وجوی رویداد" placeholder="جست‌وجو در عنوان یا محل رویداد…" value={query} onChange={e => setQuery(e.target.value)} /><EventSelect value={status} onChange={setStatus} label="وضعیت رویداد" options={[{ value: "all", label: "همهٔ وضعیت‌ها" }, ...Object.entries(eventStatusLabels).map(([value, label]) => ({ value, label }))]} /></div>
     {error && <Alert variant="destructive"><AlertDescription>{error}<Button variant="ghost" onClick={() => void load()}>تلاش دوباره</Button></AlertDescription></Alert>}
     {!events && !error && <Spinner aria-label="بارگذاری رویدادها" />}
-    {visible?.length === 0 && <Empty className="border py-16"><EmptyHeader><EmptyMedia variant="icon"><CalendarDays /></EmptyMedia><EmptyTitle>{events?.length ? "رویدادی با این فیلتر پیدا نشد" : "برای کنار هم بودن برنامه بریزید"}</EmptyTitle><EmptyDescription>{events?.length ? "عبارت جست‌وجو یا وضعیت را تغییر دهید." : "یک دورهمی، کارگاه یا جشن بسازید و مهمان‌ها را دعوت کنید."}</EmptyDescription></EmptyHeader>{!events?.length && <Button onClick={() => setCreating(true)}>ساخت اولین رویداد</Button>}</Empty>}
+    {visible?.length === 0 && <Empty className="border py-16"><EmptyHeader><EmptyMedia variant="icon"><CalendarDays /></EmptyMedia><EmptyTitle>{events?.length ? "رویدادی با این فیلتر پیدا نشد" : "رویدادی ثبت نشده"}</EmptyTitle></EmptyHeader>{!events?.length && <Button onClick={() => setCreating(true)}>ساخت اولین رویداد</Button>}</Empty>}
     {Boolean(visible?.length) && <div className="overflow-hidden rounded-xl border bg-card">{visible?.map(event => {
       const date = new Date(event.starts_at)
       return <article key={event.id} className="grid gap-5 border-b p-5 last:border-b-0 sm:grid-cols-[80px_1fr_auto] sm:items-center sm:p-6">

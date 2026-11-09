@@ -1,9 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { Link, useLocation, useNavigate } from "react-router"
-import { ArrowLeft, BriefcaseBusiness, CalendarDays, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Settings, Sparkles, Users, type LucideIcon } from "lucide-react"
+import { ArrowLeft, BriefcaseBusiness, CalendarDays, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Sparkles, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/auth"
 import { NotificationBell } from "@/components/notification-bell"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { createOrganization, fetchIngestionSettings, logout, persianError } from "@/lib/api"
@@ -23,7 +27,6 @@ const navigation: { path: string; title: string; icon: LucideIcon; adminOnly?: b
   { path: "/resumes", title: "رزومه‌های دریافت‌شده", icon: FileText },
   { path: "/review", title: "صف بازبینی", icon: Inbox },
   { path: "/events", title: "رویدادهای سازمانی", icon: CalendarDays },
-  { path: "/settings/ingestion", title: "تنظیمات دریافت", icon: Settings },
   { path: "/settings/users", title: "کاربران و دسترسی‌ها", icon: Users, adminOnly: true },
 ]
 
@@ -34,6 +37,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const [creatingOrg, setCreatingOrg] = useState(false)
+  const [createOrgOpen, setCreateOrgOpen] = useState(false)
+  const [orgName, setOrgName] = useState("")
+  const [createOrgError, setCreateOrgError] = useState<string | null>(null)
   const [logoutError, setLogoutError] = useState(false)
   const [reviewCount, setReviewCount] = useState<number | null>(null)
   useEffect(() => {
@@ -58,17 +64,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     finally { setLeaving(false) }
   }
 
-  async function createWorkspace() {
-    const name = window.prompt("نام فضای کاری جدید را وارد کنید:", "")
-    const trimmed = name?.trim()
-    if (!trimmed) return
+  async function createWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmed = orgName.trim()
+    if (!trimmed) {
+      setCreateOrgError("نام فضای کاری را وارد کنید.")
+      return
+    }
     setCreatingOrg(true)
+    setCreateOrgError(null)
     try {
       const org = await createOrganization(trimmed)
       window.localStorage.setItem("active-organization-id", org.id)
       await refresh()
+      setCreateOrgOpen(false)
+      setOrgName("")
     } catch (error) {
-      window.alert(persianError(error))
+      setCreateOrgError(persianError(error))
     } finally {
       setCreatingOrg(false)
     }
@@ -106,8 +118,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {menu}
       <div className="sidebar-bottom">
         {account}
-      <Button variant="secondary" size="sm" className="mt-2 w-full" disabled={creatingOrg} onClick={() => void createWorkspace()}>
-        {creatingOrg ? "در حال ایجاد…" : "ایجاد فضای کاری جدید"}
+      <Button variant="secondary" size="sm" className="mt-2 w-full" onClick={() => setCreateOrgOpen(true)}>
+        ایجاد فضای کاری جدید
       </Button>
     </div>
     </aside>
@@ -123,8 +135,51 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent side="right" className="w-[min(300px,90vw)] p-0" aria-describedby={undefined}>
-        <div className="mobile-navigation"><SheetTitle className="sr-only">منوی فضای کار استخدام</SheetTitle><Wordmark />{menu}<div className="mt-auto">{account}<Button variant="secondary" size="sm" className="mt-2 w-full" disabled={creatingOrg} onClick={() => void createWorkspace()}> {creatingOrg ? "در حال ایجاد…" : "ایجاد فضای کاری جدید"}</Button><Button variant="secondary" render={<Link to="/upload" onClick={() => setOpen(false)} />} nativeButton={false} className="mt-5 w-full">بارگذاری رزومه<ArrowLeft data-icon="inline-end" /></Button></div></div>
+        <div className="mobile-navigation"><SheetTitle className="sr-only">منوی فضای کار استخدام</SheetTitle><Wordmark />{menu}<div className="mt-auto">{account}<Button variant="secondary" size="sm" className="mt-2 w-full" onClick={() => setCreateOrgOpen(true)}>ایجاد فضای کاری جدید</Button><Button variant="secondary" render={<Link to="/upload" onClick={() => setOpen(false)} />} nativeButton={false} className="mt-5 w-full">بارگذاری رزومه<ArrowLeft data-icon="inline-end" /></Button></div></div>
       </SheetContent>
     </Sheet>
+    <Dialog
+      open={createOrgOpen}
+      onOpenChange={nextOpen => {
+        if (!creatingOrg) {
+          setCreateOrgOpen(nextOpen)
+          if (!nextOpen) {
+            setCreateOrgError(null)
+            setOrgName("")
+          }
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>ایجاد فضای کاری جدید</DialogTitle>
+          <DialogDescription>برای حساب شما یک فضای کاری مستقل ایجاد می‌شود و شما مدیر آن خواهید بود.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={event => void createWorkspace(event)}>
+          <FieldGroup>
+            {createOrgError && <Alert variant="destructive"><AlertDescription>{createOrgError}</AlertDescription></Alert>}
+            <Field data-invalid={createOrgError !== null}>
+              <FieldLabel htmlFor="new-workspace-name">نام فضای کاری</FieldLabel>
+              <Input
+                id="new-workspace-name"
+                autoFocus
+                autoComplete="organization"
+                value={orgName}
+                onChange={event => {
+                  setOrgName(event.target.value)
+                  if (createOrgError) setCreateOrgError(null)
+                }}
+                aria-invalid={createOrgError !== null}
+                required
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="outline" disabled={creatingOrg} onClick={() => setCreateOrgOpen(false)}>انصراف</Button>
+            <Button type="submit" disabled={creatingOrg}>{creatingOrg ? "در حال ایجاد…" : "ایجاد فضای کاری"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 }

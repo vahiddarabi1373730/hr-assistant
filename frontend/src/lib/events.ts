@@ -1,8 +1,9 @@
 import { ApiError, persianError, type PipelineOwner } from "@/lib/api"
 
 export type EventStatus = "draft" | "published" | "completed" | "cancelled"
+export type EventTransition = "completed" | "cancelled"
 export const eventStatusLabels: Record<EventStatus, string> = {
-  draft: "پیش‌نویس", published: "آمادهٔ برگزاری", completed: "برگزارشده", cancelled: "لغوشده",
+  draft: "در حال برنامه‌ریزی", published: "فعال", completed: "برگزارشده", cancelled: "لغوشده",
 }
 export type GuestResponse = "pending" | "accepted" | "declined"
 export const responseLabels: Record<GuestResponse, string> = {
@@ -24,6 +25,11 @@ export interface EventTask {
   id: string; title: string; assignee_id: string | null; due_at: string | null; done: boolean
 }
 export interface EventDetail extends Omit<OrganisationalEvent, "guest_count" | "accepted_count"> { guests: EventGuest[]; tasks: EventTask[] }
+export interface EventInvitationResult {
+  sent: string[]
+  failed: { email: string; reason: string }[]
+  skipped: string[]
+}
 export interface PublicInvitation {
   title: string; description: string; location: string; starts_at: string; ends_at: string
   status: EventStatus; guest_name: string; response: GuestResponse
@@ -52,14 +58,17 @@ const errors: Record<string, string> = {
   EVENT_STALE: "اطلاعات رویداد تغییر کرده است؛ صفحه را تازه‌سازی و دوباره تلاش کنید.",
   EVENT_CLOSED: "این رویداد پایان یافته یا لغو شده و قابل تغییر نیست.",
   EVENT_INVALID_TRANSITION: "تغییر وضعیت انتخاب‌شده برای این رویداد مجاز نیست.",
-  EVENT_START_IN_PAST: "برای انتشار، زمان شروع رویداد باید در آینده باشد.",
   EVENT_NOT_ENDED: "بعد از پایان زمان رویداد می‌توانید آن را برگزارشده ثبت کنید.",
   EVENT_CAPACITY_TOO_SMALL: "ظرفیت نمی‌تواند کمتر از تعداد مهمان‌های تأییدشده باشد.",
   EVENT_FULL: "ظرفیت رویداد تکمیل شده است؛ می‌توانید بعداً دوباره بررسی کنید.",
   EVENT_GUEST_EXISTS: "این ایمیل قبلاً به فهرست مهمان‌ها اضافه شده است.",
   EVENT_GUEST_LIMIT: "حداکثر ۵۰۰ مهمان برای هر رویداد قابل ثبت است.",
+  EVENT_MEMBERS_INVALID: "فهرست اعضای انتخاب‌شده تغییر کرده است؛ صفحه را تازه‌سازی کنید.",
+  SYSTEM_MAILBOX_NOT_CONNECTED: "برای ارسال دعوت‌نامه، ابتدا صندوق Gmail سازمان را متصل کنید.",
+  GOOGLE_RECONNECT_REQUIRED: "اتصال Gmail سازمان منقضی شده است؛ آن را دوباره متصل کنید.",
+  GOOGLE_API_FAILED: "ارسال یک یا چند ایمیل از Gmail سازمان انجام نشد.",
+  GOOGLE_API_UNAVAILABLE: "ارتباط با Gmail برقرار نشد؛ برای ارسال دوباره تلاش کنید.",
   EVENT_TASK_LIMIT: "حداکثر ۱۰۰ کار برای هر رویداد قابل ثبت است.",
-  EVENT_NOT_PUBLISHED: "برای ساخت لینک دعوت، ابتدا رویداد را منتشر کنید.",
   EVENT_NOT_STARTED: "ثبت حضور بعد از شروع رویداد امکان‌پذیر است.",
   EVENT_GUEST_NOT_ACCEPTED: "فقط برای مهمانی که حضورش را تأیید کرده می‌توانید حضور ثبت کنید.",
   EVENT_INVITATION_NOT_FOUND: "لینک دعوت معتبر نیست یا برگزارکننده آن را تغییر داده است.",
@@ -71,9 +80,10 @@ const errors: Record<string, string> = {
 export const eventError = (error: unknown) => error instanceof ApiError && errors[error.code] ? errors[error.code]! : persianError(error)
 export const fetchEvents = (signal?: AbortSignal) => eventRequest<{ items: OrganisationalEvent[] }>("events", "GET", undefined, signal)
 export const fetchEvent = (id: string, signal?: AbortSignal) => eventRequest<EventDetail>(`events/${id}`, "GET", undefined, signal)
+export const inviteEventMembers = (id: string, member_ids: string[]) => eventRequest<EventInvitationResult>(`events/${id}/invitations`, "POST", { member_ids })
 export const createEvent = (body: EventInput) => eventRequest<EventDetail>("events", "POST", body)
 export const saveEvent = (id: string, body: EventInput & { revision: number }) => eventRequest<EventDetail>(`events/${id}`, "PUT", body)
-export const changeEventStatus = (event: EventDetail, status: EventStatus) => eventRequest<EventDetail>(`events/${event.id}/status`, "POST", { status, revision: event.revision })
+export const changeEventStatus = (event: EventDetail, status: EventTransition) => eventRequest<EventDetail>(`events/${event.id}/status`, "POST", { status, revision: event.revision })
 export const addEventGuest = (id: string, body: { name: string; email: string }) => eventRequest<EventGuest>(`events/${id}/guests`, "POST", body)
 export const removeEventGuest = (id: string, guest: string) => eventRequest<void>(`events/${id}/guests/${guest}`, "DELETE")
 export const createInvitationLink = (id: string, guest: string) => eventRequest<{ url: string }>(`events/${id}/guests/${guest}/link`, "POST")

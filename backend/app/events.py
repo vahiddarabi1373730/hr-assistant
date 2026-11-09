@@ -6,13 +6,15 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, model_validator
 from sqlalchemy import func, select
 
 from app.config import settings
 from app.event_models import EventGuest, EventTask, OrgEvent
-from app.models import MembershipRole, OrgActivity
+from app.google_calendar import access_token, send_email
+from app.models import Membership, MembershipRole, OrgActivity, SystemMailbox, User
 from app.pipeline import owner_for
 from app.resumes import SessionDep
 from app.rls import set_current_org
@@ -45,7 +47,7 @@ class EventEdit(EventInput):
 
 class StatusInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["published", "completed", "cancelled"]
+    status: Literal["completed", "cancelled"]
     revision: int = Field(ge=1)
 
 
@@ -53,6 +55,17 @@ class GuestInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=160)
     email: EmailStr
+
+
+class MemberInvitationsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    member_ids: list[UUID] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def unique_members(self):
+        if len(set(self.member_ids)) != len(self.member_ids):
+            raise ValueError("member_ids must be unique")
+        return self
 
 
 class TaskInput(BaseModel):
@@ -230,7 +243,12 @@ async def list_events(
 
 @router.post("", status_code=201)
 async def create_event(data: EventInput, ctx: TenantContextDep, session: SessionDep) -> dict:
-    event = OrgEvent(org_id=ctx.org.id, organiser_id=ctx.user.id, **data.model_dump())
+    event = OrgEvent(
+        org_id=ctx.org.id,
+        organiser_id=ctx.user.id,
+        status="published",
+        **data.model_dump(),
+    )
     session.add(event)
     await session.flush()
     audit(session, ctx, event, "event_created")
@@ -285,16 +303,14 @@ async def change_status(
     if event.revision != data.revision:
         raise HTTPException(409, "EVENT_STALE")
     allowed = {
-        ("draft", "published"),
         ("draft", "cancelled"),
         ("published", "completed"),
         ("published", "cancelled"),
+        ("draft", "completed"),
     }
     if (event.status, data.status) not in allowed:
         raise HTTPException(409, "EVENT_INVALID_TRANSITION")
     now = datetime.now(UTC)
-    if data.status == "published" and event.starts_at <= now:
-        raise HTTPException(409, "EVENT_START_IN_PAST")
     if data.status == "completed" and event.ends_at > now:
         raise HTTPException(409, "EVENT_NOT_ENDED")
     event.status = data.status
@@ -376,8 +392,8 @@ async def invite_link(
     session: SessionDep,
 ) -> dict:
     event = await managed_event(session, ctx, event_id, active=False)
-    if event.status not in {"published", "completed"}:
-        raise HTTPException(409, "EVENT_NOT_PUBLISHED")
+    if event.status not in {"draft", "published", "completed"}:
+        raise HTTPException(409, "EVENT_CLOSED")
     guest = await guest_for(session, event, guest_id)
     secret = secrets.token_urlsafe(32)
     guest.token_hash = hashlib.sha256(secret.encode()).hexdigest()
@@ -385,6 +401,108 @@ async def invite_link(
     url = f"{settings.public_frontend_url.rstrip('/')}/event-rsvp/{event.org_id}.{secret}"
     await session.commit()
     return {"url": url}
+
+
+@router.post("/{event_id}/invitations")
+async def invite_members(
+    event_id: UUID,
+    data: MemberInvitationsInput,
+    ctx: TenantContextDep,
+    session: SessionDep,
+) -> dict:
+    event = await managed_event(session, ctx, event_id)
+    members = (
+        await session.execute(
+            select(User, Membership.role)
+            .join(Membership, Membership.user_id == User.id)
+            .where(
+                Membership.org_id == ctx.org.id,
+                Membership.user_id.in_(data.member_ids),
+                User.is_active.is_(True),
+            )
+        )
+    ).all()
+    if len(members) != len(data.member_ids):
+        raise HTTPException(400, "EVENT_MEMBERS_INVALID")
+
+    mailbox = await session.get(SystemMailbox, ctx.org.id)
+    if mailbox is None:
+        raise HTTPException(409, "SYSTEM_MAILBOX_NOT_CONNECTED")
+    gmail_token = await access_token(session, mailbox)
+
+    member_emails = [user.email.casefold() for user, _ in members]
+    existing_guests = (
+        await session.scalars(
+            select(EventGuest).where(
+                EventGuest.org_id == ctx.org.id,
+                EventGuest.event_id == event.id,
+                EventGuest.email.in_(member_emails),
+            )
+        )
+    ).all()
+    guests_by_email = {guest.email.casefold(): guest for guest in existing_guests}
+    new_guest_count = sum(email not in guests_by_email for email in member_emails)
+    guest_count = await session.scalar(
+        select(func.count())
+        .select_from(EventGuest)
+        .where(EventGuest.org_id == ctx.org.id, EventGuest.event_id == event.id)
+    )
+    if guest_count + new_guest_count > 500:
+        raise HTTPException(409, "EVENT_GUEST_LIMIT")
+
+    invitations: list[tuple[User, EventGuest, str]] = []
+    skipped: list[str] = []
+    for user, _ in members:
+        email = user.email.casefold()
+        guest = guests_by_email.get(email)
+        if guest is not None and guest.response == "accepted":
+            skipped.append(user.email)
+            continue
+        if guest is None:
+            guest = EventGuest(
+                org_id=ctx.org.id,
+                event_id=event.id,
+                name=user.email,
+                email=email,
+            )
+            session.add(guest)
+            guests_by_email[email] = guest
+        else:
+            guest.response = "pending"
+            guest.attended = False
+            guest.rating = None
+            guest.feedback = None
+
+        secret = secrets.token_urlsafe(32)
+        guest.token_hash = hashlib.sha256(secret.encode()).hexdigest()
+        link = f"{settings.public_frontend_url.rstrip('/')}/event-rsvp/{event.org_id}.{secret}"
+        invitations.append((user, guest, link))
+
+    audit(session, ctx, event, "event_member_invitations_requested", count=len(invitations))
+    await session.commit()
+
+    sent: list[str] = []
+    failed: list[dict[str, str]] = []
+    start = event.starts_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    end = event.ends_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    for user, _, link in invitations:
+        description = f"توضیحات: {event.description}\n" if event.description else ""
+        body = (
+            f"سلام،\n\nشما به رویداد «{event.title}» دعوت شده‌اید.\n"
+            f"{description}زمان: {start} تا {end}\n"
+            f"مکان یا لینک جلسه: {event.location or 'اعلام نشده'}\n\n"
+            f"برای اعلام حضور یا عدم حضور، از لینک اختصاصی خود استفاده کنید:\n{link}\n"
+        )
+        try:
+            await send_email(gmail_token, user.email, f"دعوت به رویداد «{event.title}»", body)
+        except HTTPException as exc:
+            failed.append({"email": user.email, "reason": str(exc.detail)})
+        except httpx.RequestError:
+            failed.append({"email": user.email, "reason": "GOOGLE_API_UNAVAILABLE"})
+        else:
+            sent.append(user.email)
+
+    return {"sent": sent, "failed": failed, "skipped": skipped}
 
 
 @router.patch("/{event_id}/guests/{guest_id}/attendance")
@@ -503,7 +621,7 @@ async def public_invitation(session, token, *, lock=False):
         guest = await session.scalar(query.execution_options(populate_existing=True))
         if guest is None:
             raise HTTPException(404, "EVENT_INVITATION_NOT_FOUND")
-    if event.status == "draft" or datetime.now(UTC) > event.ends_at + timedelta(days=30):
+    if datetime.now(UTC) > event.ends_at + timedelta(days=30):
         raise HTTPException(410, "EVENT_INVITATION_EXPIRED")
     return event, guest
 
@@ -519,7 +637,7 @@ def public_data(event, guest):
         "status": event.status,
         "guest_name": guest.name,
         "response": guest.response,
-        "can_respond": event.status == "published" and now < event.starts_at,
+        "can_respond": event.status in {"draft", "published"} and now < event.starts_at,
         "can_feedback": event.status != "cancelled"
         and now >= event.ends_at
         and guest.response == "accepted",

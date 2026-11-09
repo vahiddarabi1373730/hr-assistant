@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router"
+import { Link, useLocation, useNavigate } from "react-router"
 import { ShieldCheck } from "lucide-react"
 import { useAuth } from "@/auth"
 import { login, persianError, signup } from "@/lib/api"
@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner"
 
 export function AuthForm({ registering = false }: { registering?: boolean }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { refresh } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -26,7 +27,18 @@ export function AuthForm({ registering = false }: { registering?: boolean }) {
       if (registering) await signup({ email, password, org_name: org })
       else await login(email, password)
       await refresh()
-      navigate("/search", { replace: true })
+      const state = location.state
+      const requestedPath = typeof state === "object" && state !== null && "from" in state
+        ? state.from
+        : null
+      const destination = typeof requestedPath === "string"
+        && requestedPath.startsWith("/")
+        && !requestedPath.startsWith("//")
+        && requestedPath !== "/login"
+        && requestedPath !== "/signup"
+        ? requestedPath
+        : "/search"
+      navigate(destination, { replace: true })
     } catch (cause) {
       setError(persianError(cause))
     } finally {
