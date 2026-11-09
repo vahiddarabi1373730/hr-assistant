@@ -14,12 +14,48 @@ context and rejection reason are optional. A move never sends mail.
   including Unassigned, are local board view filters, not protected-attribute
   search. Role owner and Application owner are independent; neither is inferred.
 - `POST /api/roles`, `PATCH /api/roles/{id}`: Admin and Member pipeline work.
-  Only Draft → Open ships here. Pause/close/bulk ending flows belong to ticket 25.
+  Drafts store structured job details (description, responsibilities, required
+  and preferred skills, experience, education, seniority, employment type,
+  work mode, location, optional salary range). `POST /api/roles/{id}/rank`
+  compares the ad with accepted Candidate Profiles and returns linked
+  Applications ordered by descriptive job-related overlap on explicit HR request.
+  `POST /api/roles/{role_id}/candidates/{candidate_id}/match` compares one
+  analyzed upload with the selected Role without creating an Application; the
+  upload page offers this for open Roles and displays the score beside the file.
+  Similarity is not a hiring recommendation; the HR user makes every workflow
+  decision. In embedding mode, only the job ad is sent to the configured provider;
+  resume vectors are already stored. Unavailable/stale vectors have no score and
+  appear after ranked Applications. Configure `HR_SEARCH_EMBEDDING_MODEL` and
+  `HR_SEARCH_EMBEDDING_API_KEY` in `backend/.env` (and the optional base URL
+  and dimensions) before embedding-based ranking; restart the backend after
+  changing settings.
+  When `HR_RESUME_AI_PROVIDER=groq`, ranking instead uses Groq chat structured
+  output with the existing `HR_GROQ_API_KEY`, `HR_GROQ_BASE_URL` and
+  `HR_RESUME_EXTRACT_MODEL`. It needs no embedding credentials or reindex.
+  Only linked, same-org accepted professional Profile fields (no contact/name,
+  raw resume, Notes or pending proposal) and the job ad are sent, in batches
+  of up to five, on explicit request. The model returns validated 0..1 overlap
+  scores or null for insufficient evidence. This is model-assessed overlap,
+  not cosine similarity or a hiring recommendation; the response mode is `llm`.
+  Provider/validation failures return 503 without synthetic fallback scores.
+  The transport follows [Groq structured outputs](https://console.groq.com/docs/structured-outputs).
+  In embedding mode, Profiles whose vectors were unavailable need an explicit
+  `POST /api/search/index` retry after configuration.
+  Only Draft → Open ships here. Pause/close/
+  bulk ending flows belong to ticket 25.
 - `POST /api/roles/{id}/applications`: Open Roles only. The unique database key
   `(candidate_id, role_id)` and shared org transaction lock ensure canonical
   identity under concurrent adds and Candidate Merge. Re-adding live candidacy
   is a no-op; re-adding Hired/Rejected/Withdrawn explicitly reopens the same id
   at Sourced and records Activity, preserving prior owner/history.
+- `DELETE /api/roles/{id}`: deletes the Role and all its Applications after
+  canceling linked Google Calendar events. Application notes are retained as
+  Candidate notes; Application and interview histories are deleted. Immutable
+  organization audit entries are retained.
+- `DELETE /api/candidates/{id}`: permanently deletes the Candidate, all resume
+  files and parse data, profile changes, notes, Applications and their
+  histories after canceling linked calendar events. Immutable organization
+  audit entries are retained; the deletion entry contains only the Candidate id.
 - `POST /api/applications/{id}/stage`: human action only. Requires
   `expected_stage_id`; a stale card gets 409 rather than overwriting a newer
   decision. Any destination is explicit, including a return from an ending.

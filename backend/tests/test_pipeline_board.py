@@ -7,9 +7,19 @@ from fastapi import HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
-from app import pipeline as pipeline_routes
+from app import deletion as deletion_helpers
+from app.ai.actions import EmbeddingProvider, get_embedding_provider
+from app.ai.role_matching import get_role_matcher
+from app.config import settings
 from app.main import app
-from app.models import CandidateApplication, CandidateNote, GoogleConnection, Interview
+from app.models import (
+    Candidate,
+    CandidateApplication,
+    CandidateNote,
+    GoogleConnection,
+    Interview,
+    ResumeFile,
+)
 from app.parsing.llm import get_extractor
 from app.rls import set_current_org
 
@@ -22,6 +32,8 @@ from .test_profile_merge_summary import install
 def clear_extractor():
     yield
     app.dependency_overrides.pop(get_extractor, None)
+    app.dependency_overrides.pop(get_embedding_provider, None)
+    app.dependency_overrides.pop(get_role_matcher, None)
 
 
 async def test_member_can_create_open_and_assign_role_and_org_has_stable_stages(api_client):
@@ -44,6 +56,7 @@ async def test_member_can_create_open_and_assign_role_and_org_has_stable_stages(
     assert role.status_code == 201, role.text
     role = role.json()
     assert role["status"] == "draft" and role["owner_id"] is None
+    assert role["details"]["description"] == ""
     opened = await api_client.patch(
         f"/api/roles/{role['id']}", json={"status": "open", "owner_id": me["id"]}
     )
@@ -54,6 +67,225 @@ async def test_member_can_create_open_and_assign_role_and_org_has_stable_stages(
     assert board["applications"] == []
     assert board["roles"][0]["title"] == "مهندس نرم‌افزار"
     assert board["stages"] == stages
+
+
+async def test_role_details_are_validated_and_persisted(api_client):
+    await signup(api_client, "role-details@example.com", "Role details")
+    response = await api_client.post(
+        "/api/roles",
+        json={
+            "title": "مهندس داده",
+            "details": {
+                "description": "ساخت و نگهداری زیرساخت داده",
+                "responsibilities": [" طراحی پایپ‌لاین ", ""],
+                "required_skills": ["Python", "SQL"],
+                "preferred_skills": [" Airflow "],
+                "min_experience_years": 3,
+                "education": "مهندسی کامپیوتر",
+                "seniority": "senior",
+                "employment_type": "full_time",
+                "work_mode": "hybrid",
+                "location": "تهران",
+                "salary_range": "توافقی",
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    role = response.json()
+    assert role["details"]["responsibilities"] == ["طراحی پایپ‌لاین"]
+    assert role["details"]["preferred_skills"] == ["Airflow"]
+
+    updated = await api_client.patch(
+        f"/api/roles/{role['id']}",
+        json={"details": {**role["details"], "location": "تهران، ایران"}},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["details"]["location"] == "تهران، ایران"
+    board = (await api_client.get("/api/pipeline/board")).json()
+    assert board["roles"][0]["details"]["description"] == "ساخت و نگهداری زیرساخت داده"
+
+    invalid = await api_client.post("/api/roles", json={
+        "title": "نقش با جزئیات نامعتبر",
+        "details": {"min_experience_years": 61},
+    })
+    assert invalid.status_code == 422
+
+
+async def test_role_ranking_sorts_only_linked_candidates_by_resume_similarity(
+    api_client, monkeypatch
+):
+    monkeypatch.setattr(settings, "search_embedding_model", "test-multilingual")
+    monkeypatch.setattr(settings, "search_embedding_api_key", "test-only")
+    monkeypatch.setattr(settings, "search_embedding_dimensions", 3)
+
+    async def embed(_self, value):
+        return "[1,0,0]" if "python" in value.casefold() else "[0,1,0]"
+
+    monkeypatch.setattr(EmbeddingProvider, "embed", embed)
+    await signup(api_client, "role-ranking@example.com", "Role ranking")
+    install(
+        [
+            extraction_payload(
+                contact={"full_name": "Python Developer", "email": "python@example.com"},
+                skills=["Python"],
+            ),
+            extraction_payload(
+                contact={"full_name": "Rust Developer", "email": "rust@example.com"},
+                skills=["Rust"],
+            ),
+        ]
+    )
+    python_candidate = (await upload(api_client, b"Python profile")).json()["candidate"]["id"]
+    rust_candidate = (await upload(api_client, b"Rust profile")).json()["candidate"]["id"]
+    role = (
+        await api_client.post(
+            "/api/roles",
+            json={
+                "title": "مهندس Python",
+                "details": {"required_skills": ["Python"]},
+            },
+        )
+    ).json()
+    await api_client.patch(f"/api/roles/{role['id']}", json={"status": "open"})
+    await api_client.post(
+        f"/api/roles/{role['id']}/applications", json={"candidate_id": rust_candidate}
+    )
+    await api_client.post(
+        f"/api/roles/{role['id']}/applications", json={"candidate_id": python_candidate}
+    )
+    unrelated = (
+        await api_client.post(
+            "/api/roles",
+            json={"title": "Other role", "details": {"required_skills": ["Python"]}},
+        )
+    ).json()
+    await api_client.patch(f"/api/roles/{unrelated['id']}", json={"status": "open"})
+    await api_client.post(
+        f"/api/roles/{unrelated['id']}/applications",
+        json={"candidate_id": python_candidate},
+    )
+
+    monkeypatch.setattr(settings, "search_embedding_api_key", "")
+    unconfigured = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert unconfigured.status_code == 503
+    assert unconfigured.json()["detail"] == "ROLE_MATCHING_NOT_CONFIGURED"
+
+    monkeypatch.setattr(settings, "search_embedding_api_key", "test-only")
+    response = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert [item["candidate_id"] for item in result["items"]] == [
+        python_candidate,
+        rust_candidate,
+    ]
+    assert result["items"][0]["similarity"] > result["items"][1]["similarity"]
+    assert result["items"][0]["email"] == "python@example.com"
+    assert set(result["items"][0]) == {
+        "application_id",
+        "candidate_id",
+        "full_name",
+        "email",
+        "similarity",
+    }
+    assert result["unranked_count"] == 0
+
+    # Groq comparison must work even when embeddings are completely unconfigured.
+    monkeypatch.setattr(settings, "resume_ai_provider", "groq")
+    monkeypatch.setattr(settings, "search_embedding_api_key", "")
+    monkeypatch.setattr(settings, "search_embedding_model", "")
+
+    class Matcher:
+        configured = True
+
+        async def compare(self, job, profiles):
+            assert job["title"] == role["title"]
+            assert set(profiles) == {python_candidate, rust_candidate}
+            assert "Python" in profiles[python_candidate]["skills"]
+            return {python_candidate: 0.95, rust_candidate: None}
+
+    app.dependency_overrides[get_role_matcher] = Matcher
+    groq_response = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert groq_response.status_code == 200, groq_response.text
+    groq_result = groq_response.json()
+    assert groq_result["mode"] == "llm"
+    assert groq_result["unranked_count"] == 1
+    assert [item["candidate_id"] for item in groq_result["items"]] == [
+        python_candidate, rust_candidate,
+    ]
+    assert groq_result["items"][0]["similarity"] == 0.95
+    assert groq_result["items"][1]["similarity"] is None
+
+    async def unavailable(self, job, profiles):
+        raise ValueError("invalid provider output")
+
+    monkeypatch.setattr(Matcher, "compare", unavailable)
+    failed = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert failed.status_code == 503
+    assert failed.json()["detail"] == "ROLE_MATCHING_UNAVAILABLE"
+    monkeypatch.setattr(Matcher, "configured", False)
+    unconfigured_groq = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert unconfigured_groq.status_code == 503
+    assert unconfigured_groq.json()["detail"] == "ROLE_MATCHING_NOT_CONFIGURED"
+
+    empty_role = (await api_client.post("/api/roles", json={"title": "Empty"})).json()
+    empty_result = await api_client.post(f"/api/roles/{empty_role['id']}/rank")
+    assert empty_result.status_code == 200
+    assert empty_result.json() == {"items": [], "mode": "llm", "unranked_count": 0}
+
+    api_client.cookies.clear()
+    anonymous = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert anonymous.status_code == 401
+    await signup(api_client, "other-ranking-org@example.com", "Other ranking org")
+    monkeypatch.setattr(Matcher, "configured", True)
+    foreign = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert foreign.status_code == 404
+    assert foreign.json()["detail"] == "ROLE_NOT_FOUND"
+
+
+async def test_uploaded_candidate_can_be_matched_without_adding_to_role(
+    api_client, monkeypatch
+):
+    monkeypatch.setattr(settings, "resume_ai_provider", "groq")
+    await signup(api_client, "uploaded-role-match@example.com", "Uploaded role match")
+    install(
+        [
+            extraction_payload(
+                contact={"full_name": "Python Developer", "email": "python@example.com"},
+                skills=["Python"],
+            )
+        ]
+    )
+    candidate_id = (await upload(api_client, b"Python profile")).json()["candidate"]["id"]
+    role = (
+        await api_client.post(
+            "/api/roles",
+            json={"title": "مهندس Python", "details": {"required_skills": ["Python"]}},
+        )
+    ).json()
+
+    class Matcher:
+        configured = True
+
+        async def compare(self, job, profiles):
+            assert job["title"] == role["title"]
+            assert list(profiles) == [candidate_id]
+            assert "Python" in profiles[candidate_id]["skills"]
+            return {candidate_id: 0.81}
+
+    app.dependency_overrides[get_role_matcher] = Matcher
+    response = await api_client.post(
+        f"/api/roles/{role['id']}/candidates/{candidate_id}/match"
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "candidate_id": candidate_id,
+        "similarity": 0.81,
+        "mode": "llm",
+    }
+
+    unlinked = await api_client.post(f"/api/roles/{role['id']}/rank")
+    assert unlinked.status_code == 200, unlinked.text
+    assert unlinked.json()["items"] == []
 
 
 async def test_canonical_application_concurrent_add_explicit_moves_and_terminal_reuse(api_client):
@@ -434,7 +666,12 @@ async def test_pipeline_database_rls_canonical_key_and_immutable_activity(api_cl
 
 async def test_pipeline_schema_forces_rls_and_restricts_grants(superuser_engine):
     async with superuser_engine.connect() as conn:
-        for table in ("roles", "pipeline_stages", "application_activity"):
+        expected_grants = {
+            "roles": {"SELECT", "INSERT", "DELETE"},
+            "pipeline_stages": {"SELECT", "INSERT"},
+            "application_activity": {"SELECT", "INSERT"},
+        }
+        for table, expected in expected_grants.items():
             row = (
                 await conn.execute(
                     text(
@@ -456,7 +693,10 @@ async def test_pipeline_schema_forces_rls_and_restricts_grants(superuser_engine)
                     )
                 ).scalars()
             )
-            assert grants == {"SELECT", "INSERT"}
+            assert grants == expected
+        assert await conn.scalar(
+            text("select has_table_privilege('hr_app','candidate_applications','DELETE')")
+        )
 
 
 async def test_resume_updates_and_role_owner_edits_never_move_applications(api_client):
@@ -568,8 +808,8 @@ async def test_delete_application_preserves_candidate_notes_and_cancels_calendar
         assert token == "calendar-token"
         canceled_events.append(event_id)
 
-    monkeypatch.setattr(pipeline_routes, "access_token", fake_access_token)
-    monkeypatch.setattr(pipeline_routes, "delete_calendar_event", fake_delete_calendar_event)
+    monkeypatch.setattr(deletion_helpers, "access_token", fake_access_token)
+    monkeypatch.setattr(deletion_helpers, "delete_calendar_event", fake_delete_calendar_event)
 
     response = await api_client.delete(f"/api/applications/{application['id']}")
     assert response.status_code == 204, response.text
@@ -606,8 +846,8 @@ async def test_delete_application_stops_when_google_cancellation_fails(
     async def fail_delete_calendar_event(token, event_id):
         raise HTTPException(502, "GOOGLE_API_FAILED")
 
-    monkeypatch.setattr(pipeline_routes, "access_token", fake_access_token)
-    monkeypatch.setattr(pipeline_routes, "delete_calendar_event", fail_delete_calendar_event)
+    monkeypatch.setattr(deletion_helpers, "access_token", fake_access_token)
+    monkeypatch.setattr(deletion_helpers, "delete_calendar_event", fail_delete_calendar_event)
 
     response = await api_client.delete(f"/api/applications/{application['id']}")
     assert response.status_code == 502
@@ -619,3 +859,84 @@ async def test_delete_application_stops_when_google_cancellation_fails(
         await set_current_org(session, me["org"]["id"])
         note = await session.get(CandidateNote, note_id)
         assert str(note.application_id) == application["id"]
+
+
+async def test_delete_role_removes_applications_and_cancels_interviews_but_keeps_candidate_notes(
+    api_client, app_session_factory, monkeypatch
+):
+    me, application, candidate_id, note_id = await setup_booked_application_for_deletion(
+        api_client, app_session_factory, "delete-role@example.com"
+    )
+    canceled_events = []
+
+    async def fake_access_token(session, connection):
+        return "calendar-token"
+
+    async def fake_delete_calendar_event(token, event_id):
+        canceled_events.append(event_id)
+
+    monkeypatch.setattr(deletion_helpers, "access_token", fake_access_token)
+    monkeypatch.setattr(deletion_helpers, "delete_calendar_event", fake_delete_calendar_event)
+
+    response = await api_client.delete(f"/api/roles/{application['role_id']}")
+    assert response.status_code == 204, response.text
+    assert canceled_events == ["google-event-to-cancel"]
+    assert (await api_client.get(f"/api/applications/{application['id']}")).status_code == 404
+    candidates = (await api_client.get("/api/candidates")).json()["items"]
+    assert any(item["id"] == candidate_id for item in candidates)
+
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        note = await session.get(CandidateNote, note_id)
+        assert note is not None
+        assert note.application_id is None
+        assert await session.scalar(
+            select(Interview.id).where(Interview.application_id == application["id"])
+        ) is None
+
+
+async def test_delete_candidate_removes_resumes_and_applications_and_cancels_interviews(
+    api_client, app_session_factory, monkeypatch
+):
+    me, application, candidate_id, note_id = await setup_booked_application_for_deletion(
+        api_client, app_session_factory, "delete-candidate@example.com"
+    )
+    resume_ids = []
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        resume_ids = [
+            str(resume_id)
+            for resume_id in (
+                await session.scalars(
+                    select(ResumeFile.id).where(ResumeFile.candidate_id == candidate_id)
+                )
+            ).all()
+        ]
+    assert resume_ids
+    canceled_events = []
+
+    async def fake_access_token(session, connection):
+        return "calendar-token"
+
+    async def fake_delete_calendar_event(token, event_id):
+        canceled_events.append(event_id)
+
+    monkeypatch.setattr(deletion_helpers, "access_token", fake_access_token)
+    monkeypatch.setattr(deletion_helpers, "delete_calendar_event", fake_delete_calendar_event)
+
+    response = await api_client.delete(f"/api/candidates/{candidate_id}")
+    assert response.status_code == 204, response.text
+    assert canceled_events == ["google-event-to-cancel"]
+    assert (await api_client.get(f"/api/candidates/{candidate_id}")).status_code == 404
+    assert (await api_client.get("/api/candidates")).json()["items"] == []
+
+    async with app_session_factory() as session:
+        await set_current_org(session, me["org"]["id"])
+        assert await session.get(Candidate, candidate_id) is None
+        assert await session.get(CandidateApplication, application["id"]) is None
+        assert await session.get(CandidateNote, note_id) is None
+        assert await session.scalar(
+            select(Interview.id).where(Interview.application_id == application["id"])
+        ) is None
+        for resume_id in resume_ids:
+            assert await session.get(ResumeFile, resume_id) is None

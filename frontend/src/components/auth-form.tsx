@@ -48,6 +48,7 @@ export function AuthForm({ registering = false }: { registering?: boolean }) {
           <Button type="submit" disabled={busy} className="mt-2 w-full">{busy && <Spinner data-icon="inline-start" />}{busy ? "لطفاً صبر کنید…" : registering ? "ایجاد حساب و فضای کار" : "ورود به فضای کار"}</Button>
         </FieldGroup>
       </form>
+      {!registering && <p className="mt-4 text-center text-xs"><Link className="font-semibold text-primary" to="/forgot-password">گذرواژه‌تان را فراموش کرده‌اید؟</Link></p>}
       <p className="mt-8 text-center text-xs text-muted-foreground">{registering ? "حساب دارید؟ " : "هنوز حساب ندارید؟ "}<Link className="font-semibold text-primary" to={registering ? "/login" : "/signup"}>{registering ? "وارد شوید" : "ساخت حساب سازمان"}</Link></p>
     </div></main>
   </div>

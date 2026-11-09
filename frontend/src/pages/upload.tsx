@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from "react"
+import { useEffect, useRef, useState, type DragEvent } from "react"
 import { Link } from "react-router"
 import {
   Alert,
@@ -7,12 +7,20 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
+  TextField,
   Typography,
 } from "@/components/ui-compat"
 import { ArrowLeft, FileText, Trash2, UploadCloud } from "lucide-react"
-import { persianError, uploadResume } from "@/lib/api"
+import {
+  fetchRoles,
+  matchCandidateToRole,
+  persianError,
+  uploadResume,
+  type PipelineRole,
+} from "@/lib/api"
 import { parseStatusLabel } from "@/lib/profile"
 
 type Entry = {
@@ -20,6 +28,10 @@ type Entry = {
   file: File
   state: "queued" | "processing" | "done" | "review" | "failed" | "duplicate"
   message?: string
+  candidateId?: string
+  matching?: boolean
+  matchError?: string
+  match?: { roleId: string; roleTitle: string; similarity: number | null }
 }
 const accept = ".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff,.doc,.rtf"
 const labels = {
@@ -38,6 +50,26 @@ export function UploadPage() {
   const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [roles, setRoles] = useState<PipelineRole[]>([])
+  const [selectedRoleId, setSelectedRoleId] = useState("")
+  const [rolesError, setRolesError] = useState<string | null>(null)
+  const [rolesLoading, setRolesLoading] = useState(true)
+  useEffect(() => {
+    let active = true
+    fetchRoles()
+      .then(({ items }) => {
+        if (active) setRoles(items.filter((role) => role.status === "open"))
+      })
+      .catch((cause) => {
+        if (active) setRolesError(persianError(cause))
+      })
+      .finally(() => {
+        if (active) setRolesLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
   function add(files: File[]) {
     if (busy) return
     const valid = files.filter(
@@ -88,7 +120,9 @@ export function UploadPage() {
             : "پاسخ پردازش دریافت نشد."
         setEntries((old) =>
           old.map((item) =>
-            item.id === entry.id ? { ...item, state, message } : item,
+            item.id === entry.id
+              ? { ...item, state, message, candidateId: result.candidate?.id }
+              : item,
           ),
         )
       } catch (cause) {
@@ -102,6 +136,43 @@ export function UploadPage() {
       }
     }
     setBusy(false)
+  }
+  async function compare(entry: Entry) {
+    const role = roles.find((item) => item.id === selectedRoleId)
+    if (!role || !entry.candidateId) return
+    setEntries((old) =>
+      old.map((item) =>
+        item.id === entry.id
+          ? { ...item, matching: true, matchError: undefined }
+          : item,
+      ),
+    )
+    try {
+      const match = await matchCandidateToRole(role.id, entry.candidateId)
+      setEntries((old) =>
+        old.map((item) =>
+          item.id === entry.id
+            ? {
+                ...item,
+                matching: false,
+                match: {
+                  roleId: role.id,
+                  roleTitle: role.title,
+                  similarity: match.similarity,
+                },
+              }
+            : item,
+        ),
+      )
+    } catch (cause) {
+      setEntries((old) =>
+        old.map((item) =>
+          item.id === entry.id
+            ? { ...item, matching: false, matchError: persianError(cause) }
+            : item,
+        ),
+      )
+    }
   }
   const pending = entries.filter((entry) => entry.state === "queued").length
   return (
@@ -165,6 +236,35 @@ export function UploadPage() {
             {error}
           </Alert>
         )}
+        {entries.some((entry) => entry.candidateId) && (
+          <Stack spacing={1} sx={{ mt: 3 }}>
+            <TextField
+              select
+              label="فرصت شغلی برای مقایسه"
+              value={selectedRoleId}
+              onChange={(event) => setSelectedRoleId(event.target.value)}
+              disabled={rolesLoading || !roles.length}
+            >
+              <MenuItem value="">انتخاب فرصت شغلی</MenuItem>
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  {role.title}
+                </MenuItem>
+              ))}
+            </TextField>
+            {rolesError && <Alert severity="error">{rolesError}</Alert>}
+            {rolesLoading && (
+              <Typography color="text.secondary" sx={{ fontSize: 12 }}>
+                در حال دریافت فرصت‌های باز…
+              </Typography>
+            )}
+            {!rolesLoading && !rolesError && roles.length === 0 && (
+              <Typography color="text.secondary" sx={{ fontSize: 12 }}>
+                فرصت شغلی بازی برای مقایسه وجود ندارد.
+              </Typography>
+            )}
+          </Stack>
+        )}
         {entries.length > 0 && (
           <Stack spacing={0} sx={{ mt: 3 }}>
             {entries.map((entry) => (
@@ -203,6 +303,19 @@ export function UploadPage() {
                       sx={{ ...{ mt: 0.5 }, fontSize: 12 }}
                     >
                       {entry.message}
+                    </Typography>
+                  )}
+                  {entry.match && (
+                    <Typography sx={{ mt: 0.5, fontSize: 12, fontWeight: 600 }}>
+                      تطابق با «{entry.match.roleTitle}»:{" "}
+                      {entry.match.similarity === null
+                        ? "امتیاز قابل محاسبه نیست"
+                        : `${Math.round(entry.match.similarity * 100).toLocaleString("fa-IR")}٪`}
+                    </Typography>
+                  )}
+                  {entry.matchError && (
+                    <Typography color="error" sx={{ mt: 0.5, fontSize: 12 }}>
+                      {entry.matchError}
                     </Typography>
                   )}
                 </Box>
@@ -250,6 +363,19 @@ export function UploadPage() {
                     }
                   >
                     تلاش مجدد
+                  </Button>
+                )}
+                {entry.candidateId && (
+                  <Button
+                    size="small"
+                    disabled={busy || !selectedRoleId || entry.matching}
+                    onClick={() => void compare(entry)}
+                  >
+                    {entry.matching
+                      ? "در حال مقایسه…"
+                      : entry.match
+                        ? "مقایسهٔ دوباره"
+                        : "امتیاز تطابق"}
                   </Button>
                 )}
               </Stack>

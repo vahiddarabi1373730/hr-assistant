@@ -1,21 +1,23 @@
 """Human-controlled Role and Application workflow. No automatic stage moves."""
 
-from typing import Literal
+import logging
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import load_only
 
-from app.google_calendar import access_token, delete_calendar_event
+from app.ai.actions import get_embedding_provider
+from app.ai.role_matching import get_role_matcher
+from app.config import settings
+from app.deletion import cancel_application_interviews
 from app.models import (
     ApplicationActivity,
     Candidate,
     CandidateApplication,
     CandidateNote,
-    GoogleConnection,
-    Interview,
     Membership,
     OrgActivity,
     PipelineStage,
@@ -28,12 +30,37 @@ from app.resumes import SessionDep
 from app.tenancy import TenantContextDep
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
+logger = logging.getLogger(__name__)
+
+
+class RoleDetails(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    description: str = Field(default="", max_length=5000)
+    responsibilities: list[str] = Field(default_factory=list, max_length=40)
+    required_skills: list[str] = Field(default_factory=list, max_length=40)
+    preferred_skills: list[str] = Field(default_factory=list, max_length=40)
+    min_experience_years: int | None = Field(default=None, ge=0, le=60)
+    education: str = Field(default="", max_length=200)
+    seniority: Literal["", "intern", "junior", "mid", "senior", "lead"] = ""
+    employment_type: Literal["", "full_time", "part_time", "contract", "internship"] = ""
+    work_mode: Literal["", "onsite", "hybrid", "remote"] = ""
+    location: str = Field(default="", max_length=200)
+    salary_range: str = Field(default="", max_length=300)
+
+    @field_validator("responsibilities", "required_skills", "preferred_skills")
+    @classmethod
+    def normalize_list_items(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values if value.strip()]
+        if any(len(value) > 120 for value in cleaned):
+            raise ValueError("items must be at most 120 characters")
+        return cleaned
 
 
 class RoleInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     owner_id: UUID | None = None
+    details: RoleDetails = Field(default_factory=RoleDetails)
 
     @field_validator("title")
     @classmethod
@@ -48,6 +75,7 @@ class RoleEdit(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     status: Literal["draft", "open"] | None = None
     owner_id: UUID | None = None
+    details: RoleDetails | None = None
 
 
 async def owner_for(session, org_id, owner_id):
@@ -67,7 +95,32 @@ async def role_for(session, org_id, role_id):
 
 
 def role_data(role):
-    return {"id": role.id, "title": role.title, "status": role.status, "owner_id": role.owner_id}
+    details = role.details or {}
+    if isinstance(details, dict):
+        details = {key: value for key, value in details.items() if key != "criteria_weights"}
+    return {
+        "id": role.id,
+        "title": role.title,
+        "status": role.status,
+        "owner_id": role.owner_id,
+        "details": RoleDetails.model_validate(details).model_dump(),
+    }
+
+
+def role_embedding_text(role) -> str:
+    details = role_data(role)["details"]
+    return "\n".join(
+        [
+            role.title,
+            details["description"],
+            *details["responsibilities"],
+            *details["required_skills"],
+            *details["preferred_skills"],
+            details["education"],
+            details["seniority"],
+            details["location"],
+        ]
+    ).strip()
 
 
 async def stages_for(session, org_id):
@@ -121,7 +174,13 @@ async def roles(ctx: TenantContextDep, session: SessionDep) -> dict:
 async def create_role(data: RoleInput, ctx: TenantContextDep, session: SessionDep) -> dict:
     await lock_org(session, ctx.org.id)
     await owner_for(session, ctx.org.id, data.owner_id)
-    role = Role(org_id=ctx.org.id, title=data.title, owner_id=data.owner_id, status="draft")
+    role = Role(
+        org_id=ctx.org.id,
+        title=data.title,
+        details=data.details.model_dump(),
+        owner_id=data.owner_id,
+        status="draft",
+    )
     session.add(role)
     await session.flush()
     session.add(
@@ -144,6 +203,8 @@ async def edit_role(
     await lock_org(session, ctx.org.id)
     role = await role_for(session, ctx.org.id, role_id)
     changes = data.model_dump(exclude_unset=True)
+    if "details" in changes and data.details is None:
+        raise HTTPException(422, "INVALID_ROLE_DETAILS")
     if "owner_id" in changes:
         await owner_for(session, ctx.org.id, data.owner_id)
     if "title" in changes and not (data.title or "").strip():
@@ -169,6 +230,257 @@ async def edit_role(
     result = role_data(role)
     await session.commit()
     return result
+
+
+@router.delete("/roles/{role_id}", status_code=204)
+async def delete_role(role_id: UUID, ctx: TenantContextDep, session: SessionDep) -> None:
+    await lock_org(session, ctx.org.id)
+    role = await role_for(session, ctx.org.id, role_id)
+    applications = (
+        await session.scalars(
+            select(CandidateApplication).where(
+                CandidateApplication.org_id == ctx.org.id,
+                CandidateApplication.role_id == role.id,
+            )
+        )
+    ).all()
+    application_ids = [application.id for application in applications]
+    await cancel_application_interviews(session, ctx.org.id, application_ids)
+    if application_ids:
+        await session.execute(
+            update(CandidateNote)
+            .where(
+                CandidateNote.org_id == ctx.org.id,
+                CandidateNote.application_id.in_(application_ids),
+            )
+            .values(application_id=None)
+        )
+    for application in applications:
+        await session.delete(application)
+    session.add(
+        OrgActivity(
+            org_id=ctx.org.id,
+            actor_user_id=ctx.user.id,
+            event_type="role_deleted",
+            data={"role_id": str(role.id), "applications_deleted": len(applications)},
+        )
+    )
+    await session.delete(role)
+    await session.commit()
+
+
+@router.post("/roles/{role_id}/rank")
+async def rank_role_candidates(
+    role_id: UUID,
+    ctx: TenantContextDep,
+    session: SessionDep,
+    provider: Annotated[object, Depends(get_embedding_provider)],
+    matcher: Annotated[object, Depends(get_role_matcher)],
+) -> dict:
+    role = await role_for(session, ctx.org.id, role_id)
+    has_applications = await session.scalar(
+        select(CandidateApplication.id)
+        .where(
+            CandidateApplication.org_id == ctx.org.id,
+            CandidateApplication.role_id == role.id,
+        )
+        .limit(1)
+    )
+    if has_applications is None:
+        mode = "llm" if settings.resume_ai_provider == "groq" else "semantic"
+        return {"items": [], "mode": mode, "unranked_count": 0}
+
+    if settings.resume_ai_provider == "groq":
+        if not matcher.configured:
+            raise HTTPException(503, "ROLE_MATCHING_NOT_CONFIGURED")
+        linked = (
+            await session.execute(
+                select(CandidateApplication.id, Candidate)
+                .options(
+                    load_only(Candidate.id, Candidate.full_name, Candidate.email, Candidate.profile)
+                )
+                .join(
+                    Candidate,
+                    (Candidate.id == CandidateApplication.candidate_id)
+                    & (Candidate.org_id == CandidateApplication.org_id),
+                )
+                .where(
+                    CandidateApplication.org_id == ctx.org.id,
+                    CandidateApplication.role_id == role.id,
+                )
+                .order_by(Candidate.id)
+            )
+        ).all()
+        profiles = {str(candidate.id): candidate.profile or {} for _, candidate in linked}
+        # Release the read transaction/connection before waiting on Groq.
+        role_evidence = {"title": role.title, **role_data(role)["details"]}
+        result = [
+            {
+                "application_id": application_id,
+                "candidate_id": candidate.id,
+                "full_name": candidate.full_name,
+                "email": candidate.email,
+                "similarity": None,
+            }
+            for application_id, candidate in linked
+        ]
+        await session.rollback()
+        try:
+            scores = await matcher.compare(role_evidence, profiles)
+        except Exception as exc:
+            # Provider errors may contain input data; do not log their bodies.
+            logger.warning("Groq role comparison failed (%s)", type(exc).__name__)
+            raise HTTPException(503, "ROLE_MATCHING_UNAVAILABLE") from exc
+        for item in result:
+            item["similarity"] = scores[str(item["candidate_id"])]
+        result.sort(key=lambda item: (
+            item["similarity"] is None,
+            -(item["similarity"] or 0),
+            str(item["candidate_id"]),
+        ))
+        return {
+            "items": result,
+            "mode": "llm",
+            "unranked_count": sum(item["similarity"] is None for item in result),
+        }
+
+    if not provider.model or not settings.search_embedding_api_key:
+        raise HTTPException(503, "ROLE_MATCHING_NOT_CONFIGURED")
+
+    job_text = role_embedding_text(role)
+    try:
+        vector = await provider.embed(job_text)
+    except Exception as exc:
+        logger.exception("Could not create role embedding for role %s", role.id)
+        raise HTTPException(503, "ROLE_MATCHING_UNAVAILABLE") from exc
+
+    items = (
+        await session.execute(
+            text("""
+                SELECT a.id AS application_id, c.id AS candidate_id, c.full_name, c.email,
+                       CASE WHEN d.embedding IS NOT NULL
+                                  AND d.embedding_status='ready'
+                                  AND d.embedding_model=:model
+                                  AND d.embedding_dimensions=:dimensions
+                            THEN 1 - (d.embedding <=> CAST(:vector AS vector))
+                            ELSE NULL END AS similarity
+                FROM candidate_applications a
+                JOIN candidates c ON c.id=a.candidate_id AND c.org_id=a.org_id
+                JOIN pipeline_stages s ON s.id=a.stage_id AND s.org_id=a.org_id
+                LEFT JOIN candidate_search_docs d
+                    ON d.candidate_id=c.id AND d.org_id=c.org_id
+                WHERE a.org_id=:org_id AND a.role_id=:role_id
+                ORDER BY
+                    CASE WHEN d.embedding IS NOT NULL
+                               AND d.embedding_status='ready'
+                               AND d.embedding_model=:model
+                               AND d.embedding_dimensions=:dimensions
+                         THEN 0 ELSE 1 END,
+                CASE WHEN d.embedding IS NOT NULL
+                           AND d.embedding_status='ready'
+                           AND d.embedding_model=:model
+                           AND d.embedding_dimensions=:dimensions
+                     THEN d.embedding <=> CAST(:vector AS vector)
+                     ELSE NULL END NULLS LAST,
+                c.id
+            """),
+            {
+                "org_id": ctx.org.id,
+                "role_id": role.id,
+                "vector": vector,
+                "model": provider.model,
+                "dimensions": provider.dimensions,
+            },
+        )
+    ).mappings().all()
+    result = [
+        {
+            "application_id": row["application_id"],
+            "candidate_id": row["candidate_id"],
+            "full_name": row["full_name"],
+            "email": row["email"],
+            "similarity": float(row["similarity"]) if row["similarity"] is not None else None,
+        }
+        for row in items
+    ]
+    return {
+        "items": result,
+        "mode": "semantic",
+        "unranked_count": sum(item["similarity"] is None for item in result),
+    }
+
+
+@router.post("/roles/{role_id}/candidates/{candidate_id}/match")
+async def match_candidate_to_role(
+    role_id: UUID,
+    candidate_id: UUID,
+    ctx: TenantContextDep,
+    session: SessionDep,
+    provider: Annotated[object, Depends(get_embedding_provider)],
+    matcher: Annotated[object, Depends(get_role_matcher)],
+) -> dict:
+    role = await role_for(session, ctx.org.id, role_id)
+    candidate = await session.scalar(
+        select(Candidate)
+        .options(load_only(Candidate.id, Candidate.org_id, Candidate.profile))
+        .where(Candidate.id == candidate_id, Candidate.org_id == ctx.org.id)
+    )
+    if candidate is None:
+        raise HTTPException(404, "CANDIDATE_NOT_FOUND")
+
+    role_evidence = {"title": role.title, **role_data(role)["details"]}
+    if settings.resume_ai_provider == "groq":
+        if not matcher.configured:
+            raise HTTPException(503, "ROLE_MATCHING_NOT_CONFIGURED")
+        candidate_key = str(candidate.id)
+        profiles = {candidate_key: candidate.profile or {}}
+        await session.rollback()
+        try:
+            scores = await matcher.compare(role_evidence, profiles)
+        except Exception as exc:
+            logger.warning("Groq role comparison failed (%s)", type(exc).__name__)
+            raise HTTPException(503, "ROLE_MATCHING_UNAVAILABLE") from exc
+        return {
+            "candidate_id": candidate_key,
+            "similarity": scores[candidate_key],
+            "mode": "llm",
+        }
+
+    if not provider.model or not settings.search_embedding_api_key:
+        raise HTTPException(503, "ROLE_MATCHING_NOT_CONFIGURED")
+    job_text = role_embedding_text(role)
+    try:
+        vector = await provider.embed(job_text)
+    except Exception as exc:
+        logger.exception("Could not create role embedding for role %s", role.id)
+        raise HTTPException(503, "ROLE_MATCHING_UNAVAILABLE") from exc
+
+    similarity = await session.scalar(
+        text("""
+            SELECT CASE WHEN d.embedding IS NOT NULL
+                              AND d.embedding_status='ready'
+                              AND d.embedding_model=:model
+                              AND d.embedding_dimensions=:dimensions
+                        THEN 1 - (d.embedding <=> CAST(:vector AS vector))
+                        ELSE NULL END
+            FROM candidates c
+            LEFT JOIN candidate_search_docs d
+                ON d.candidate_id=c.id AND d.org_id=c.org_id
+            WHERE c.org_id=:org_id AND c.id=:candidate_id
+        """),
+        {
+            "org_id": ctx.org.id,
+            "candidate_id": candidate.id,
+            "vector": vector,
+            "model": provider.model,
+            "dimensions": provider.dimensions,
+        },
+    )
+    return {
+        "candidate_id": str(candidate.id),
+        "similarity": float(similarity) if similarity is not None else None,
+        "mode": "semantic",
+    }
 
 
 @router.get("/pipeline/board")
@@ -238,33 +550,7 @@ async def delete_application(
 ) -> None:
     await lock_org(session, ctx.org.id)
     application = await application_for(session, ctx.org.id, application_id)
-    interviews = (
-        await session.scalars(
-            select(Interview).where(
-                Interview.org_id == ctx.org.id,
-                Interview.application_id == application.id,
-            )
-        )
-    ).all()
-    connections: dict[UUID, GoogleConnection | None] = {}
-    for interview in interviews:
-        if interview.status == "booked" and not interview.google_event_id:
-            raise HTTPException(409, "INTERVIEW_CANCELLATION_UNAVAILABLE")
-        if not interview.google_event_id:
-            continue
-        if interview.proposer_user_id not in connections:
-            connections[interview.proposer_user_id] = await session.scalar(
-                select(GoogleConnection).where(
-                    GoogleConnection.org_id == ctx.org.id,
-                    GoogleConnection.user_id == interview.proposer_user_id,
-                )
-            )
-        connection = connections[interview.proposer_user_id]
-        if connection is None:
-            raise HTTPException(409, "INTERVIEW_CANCELLATION_UNAVAILABLE")
-        await delete_calendar_event(
-            await access_token(session, connection), interview.google_event_id
-        )
+    await cancel_application_interviews(session, ctx.org.id, [application.id])
 
     await session.execute(
         update(CandidateNote)

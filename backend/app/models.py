@@ -93,6 +93,49 @@ class Membership(Base):
     )
 
 
+class OrgInvitation(Base):
+    __tablename__ = "org_invitations"
+    __table_args__ = (
+        UniqueConstraint("org_id", "email"),
+        UniqueConstraint("token_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orgs.id", ondelete="cascade"), nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="set null")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SystemMailbox(Base):
+    __tablename__ = "system_mailboxes"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orgs.id", ondelete="cascade"), primary_key=True
+    )
+    google_email: Mapped[str] = mapped_column(Text, nullable=False)
+    encrypted_refresh_token: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    encrypted_access_token: Mapped[bytes | None] = mapped_column(LargeBinary)
+    access_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OrgActivity(Base):
     """Org-level Activity stream — append-only system events for admin actions."""
 
@@ -604,6 +647,7 @@ class Role(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     org_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("orgs.id", ondelete="cascade"), index=True)
     title: Mapped[str] = mapped_column(Text)
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(Text, default="draft")
     owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

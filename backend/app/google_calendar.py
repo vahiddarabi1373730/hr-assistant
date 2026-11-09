@@ -15,12 +15,13 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException
 
 from app.config import settings
-from app.models import GoogleConnection
+from app.models import GoogleConnection, SystemMailbox
 
 SCOPES = (
     "openid email https://www.googleapis.com/auth/calendar.events "
     "https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/gmail.send"
 )
+SYSTEM_MAILBOX_SCOPES = "openid email https://www.googleapis.com/auth/gmail.send"
 
 
 def _fernet() -> Fernet:
@@ -57,15 +58,15 @@ def read_state(value: str) -> dict[str, str]:
     return payload
 
 
-def authorization_url(state: str) -> str:
+def authorization_url(state: str, redirect_uri: str | None = None, scopes: str = SCOPES) -> str:
     if not settings.google_client_id or not settings.google_client_secret:
         raise HTTPException(503, "GOOGLE_NOT_CONFIGURED")
     return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(
         {
             "client_id": settings.google_client_id,
-            "redirect_uri": settings.google_redirect_uri,
+            "redirect_uri": redirect_uri or settings.google_redirect_uri,
             "response_type": "code",
-            "scope": SCOPES,
+            "scope": scopes,
             "access_type": "offline",
             "prompt": "consent",
             "state": state,
@@ -73,7 +74,7 @@ def authorization_url(state: str) -> str:
     )
 
 
-async def exchange_code(code: str) -> dict:
+async def exchange_code(code: str, redirect_uri: str | None = None) -> dict:
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.post(
             "https://oauth2.googleapis.com/token",
@@ -81,7 +82,7 @@ async def exchange_code(code: str) -> dict:
                 "code": code,
                 "client_id": settings.google_client_id,
                 "client_secret": settings.google_client_secret,
-                "redirect_uri": settings.google_redirect_uri,
+                "redirect_uri": redirect_uri or settings.google_redirect_uri,
                 "grant_type": "authorization_code",
             },
         )
@@ -90,7 +91,7 @@ async def exchange_code(code: str) -> dict:
     return response.json()
 
 
-async def access_token(session, connection: GoogleConnection) -> str:
+async def access_token(session, connection: GoogleConnection | SystemMailbox) -> str:
     if connection.encrypted_access_token and connection.access_token_expires_at:
         if connection.access_token_expires_at > datetime.now(UTC) + timedelta(seconds=60):
             return decrypt(connection.encrypted_access_token)
@@ -149,6 +150,10 @@ def booking_message(booking_url: str, candidate_name: str, title: str) -> str:
 
 
 async def send_booking_email(token: str, recipient: str, subject: str, body: str) -> None:
+    await send_email(token, recipient, subject, body)
+
+
+async def send_email(token: str, recipient: str, subject: str, body: str) -> None:
     message = EmailMessage()
     message["To"] = recipient
     message["Subject"] = subject
@@ -157,3 +162,15 @@ async def send_booking_email(token: str, recipient: str, subject: str, body: str
     await google_json(
         token, "POST", "https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {"raw": raw}
     )
+
+
+async def revoke_google_token(token: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                "https://oauth2.googleapis.com/revoke", data={"token": token}
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "GOOGLE_TOKEN_REVOKE_FAILED") from exc
+    if response.status_code not in (200, 400):
+        raise HTTPException(502, "GOOGLE_TOKEN_REVOKE_FAILED")

@@ -2,6 +2,21 @@
 
 The hiring context for a SaaS ATS where HR generalists at small companies manage candidates and open roles, with AI embedded in the workflow. This glossary holds the domain language; implementation lives elsewhere.
 
+## Organisational events
+
+**Event**: An org-owned gathering, workshop or celebration with its own schedule,
+organiser, guest list, planned budget and preparation checklist. Independent of
+Candidate, Resume, Role and Application. Draft → Published → Completed/Cancelled.
+
+**Event Guest**: A named invitee with an email and individual RSVP link; does not
+need an application account and is never automatically added to the Talent Pool.
+
+**RSVP**: A guest's explicit accept/decline response before event start. Accepting
+reserves one seat; declining releases it. Actual attendance is recorded separately.
+
+**Event Task**: A preparation checklist item with an optional responsible org member,
+due date and completion flag; distinct from the hiring pipeline's Stage.
+
 ## Language
 
 ### Core entities

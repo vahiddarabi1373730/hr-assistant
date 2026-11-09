@@ -11,6 +11,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app import event_models  # noqa: F401 - register event tables in migration metadata
 from app.config import settings
 from app.models import Base
 

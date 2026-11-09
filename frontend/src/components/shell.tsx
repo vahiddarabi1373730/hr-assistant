@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Link, useLocation, useNavigate } from "react-router"
-import { ArrowLeft, BriefcaseBusiness, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Plus, Search, Settings, Users } from "lucide-react"
+import { ArrowLeft, BriefcaseBusiness, CalendarDays, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Plus, Settings, Sparkles, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/auth"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
@@ -14,14 +14,16 @@ export function Wordmark() {
   </div>
 }
 
-const navigation = [
-  { path: "/search", title: "جست‌وجوی کاندیدا", icon: Search },
+const navigation: { path: string; title: string; icon: LucideIcon; adminOnly?: boolean }[] = [
   { path: "/board", title: "برد استخدام", icon: Columns3 },
   { path: "/roles", title: "فرصت‌های شغلی", icon: BriefcaseBusiness },
+  { path: "/rankings", title: "تطابق کاندیداها", icon: Sparkles },
   { path: "/candidates", title: "بانک کاندیداها", icon: Users },
   { path: "/resumes", title: "رزومه‌های دریافت‌شده", icon: FileText },
   { path: "/review", title: "صف بازبینی", icon: Inbox },
+  { path: "/events", title: "رویدادهای سازمانی", icon: CalendarDays },
   { path: "/settings/ingestion", title: "تنظیمات دریافت", icon: Settings },
+  { path: "/settings/users", title: "کاربران و دسترسی‌ها", icon: Users, adminOnly: true },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -54,9 +56,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     finally { setLeaving(false) }
   }
   const current = navigation.find(item => pathname === item.path || pathname.startsWith(item.path + "/"))
+  const visibleNavigation = navigation.filter(item => !item.adminOnly || me?.role === "admin")
   const pageTitle = pathname === "/upload" ? "بارگذاری رزومه" : current?.title ?? "فضای کار استخدام"
   const menu = <nav className="workspace-nav" aria-label="منوی اصلی">
-    {navigation.map(({ path, title, icon: Icon }, index) => <div key={path}>
+    {visibleNavigation.map(({ path, title, icon: Icon }, index) => <div key={path}>
       {index === 0 && <p className="nav-group-label">استخدام و جذب</p>}
       {index === 3 && <p className="nav-group-label">مدیریت کاندیداها</p>}
       {index === 6 && <p className="nav-group-label">فضای کار</p>}
@@ -74,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-layout">
     <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-50 focus:bg-card focus:p-3">رفتن به محتوای اصلی</a>
     <aside className="workspace-sidebar">
-      <Link to="/search" aria-label="صفحه اصلی"><Wordmark /></Link>
+      <Link to="/board" aria-label="صفحه اصلی"><Wordmark /></Link>
       {menu}
       <div className="sidebar-bottom">
         <div className="sidebar-hint"><strong>رزومه جدید دریافت کرده‌اید؟</strong><p>به بانک کاندیداها اضافه‌اش کنید.</p><Button variant="secondary" size="sm" render={<Link to="/upload" />} nativeButton={false} className="mt-3 w-full"><Plus data-icon="inline-start" />بارگذاری رزومه</Button></div>
@@ -87,7 +90,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="header-actions">
           <Button variant="ghost" size="sm" render={<Link to="/review" />} nativeButton={false} className="header-review"><Inbox data-icon="inline-start" />بازبینی {reviewCount === null ? "" : reviewCount.toLocaleString("fa-IR")}</Button>
           <NotificationBell />
-          {pathname !== "/search" && <Button variant="outline" size="sm" render={<Link to="/search" />} nativeButton={false} aria-label="جست‌وجوی کاندیدا"><Search /><span className="hidden sm:inline">جست‌وجو</span></Button>}
         </div>
       </header>
       <main id="main-content" className="workspace-main">{children}</main>

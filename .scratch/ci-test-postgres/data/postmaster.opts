@@ -1,0 +1,1 @@
+C:/Program Files/PostgreSQL/18/bin/postgres.exe "-D" "C:/Vahid/projects/hr-assist/.scratch/ci-test-postgres/data" "-h" "127.0.0.1" "-p" "56433"

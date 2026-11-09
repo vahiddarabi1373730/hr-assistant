@@ -11,8 +11,9 @@ import re
 import secrets
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from fastapi_users import (
     BaseUserManager,
     FastAPIUsers,
@@ -88,6 +89,38 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 reason="PASSWORD_TOO_SHORT",
             )
 
+    async def _send_account_email(self, user: User, token: str, path: str) -> None:
+        from app.tenancy import load_membership_with_org
+        from app.user_admin import send_system_email
+
+        loaded = await load_membership_with_org(self.user_db.session, user.id)
+        if loaded is None:
+            raise HTTPException(409, "NO_MEMBERSHIP")
+        _, org = loaded
+        await set_current_org(self.user_db.session, org.id)
+        url = f"{settings.public_frontend_url.rstrip('/')}/{path}?token={quote(token, safe='')}"
+        subject = "بازیابی گذرواژه" if path == "reset-password" else "تأیید رایانامه"
+        action = "برای تنظیم گذرواژهٔ تازه" if path == "reset-password" else "برای تأیید رایانامه"
+        await send_system_email(
+            self.user_db.session,
+            org.id,
+            user.email,
+            subject,
+            f"سلام،\n\n{action} از پیوند زیر استفاده کنید:\n{url}\n\n"
+            "اگر این درخواست از طرف شما نبوده است، این پیام را نادیده بگیرید.",
+        )
+        await self.user_db.session.commit()
+
+    async def on_after_forgot_password(
+        self, user: User, token: str, request: Request | None = None
+    ) -> None:
+        await self._send_account_email(user, token, "reset-password")
+
+    async def on_after_request_verify(
+        self, user: User, token: str, request: Request | None = None
+    ) -> None:
+        await self._send_account_email(user, token, "verify-email")
+
     async def create(
         self,
         user_create: schemas.UC,
@@ -116,9 +149,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
         session.add_all(
             [
-                Membership(
-                    user_id=user.id, org_id=org.id, role=MembershipRole.ADMIN
-                ),
+                Membership(user_id=user.id, org_id=org.id, role=MembershipRole.ADMIN),
                 OrgActivity(
                     org_id=org.id,
                     actor_user_id=user.id,

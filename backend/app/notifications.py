@@ -76,6 +76,11 @@ async def inbox(ctx: TenantContextDep, session: SessionDep) -> dict:
             href = f"/candidates/{note.candidate_id}?tab=notes&note={note.id}"
             if note.application_id:
                 href += f"&application={note.application_id}"
+        elif item.kind == "event_reminder" and item.dedupe_key.startswith("event:"):
+            try:
+                href = f"/events/{UUID(item.dedupe_key.split(':')[1])}"
+            except (ValueError, IndexError):
+                pass
         items.append(
             {
                 "id": item.id,

@@ -1,5 +1,6 @@
 """Application settings (env-prefixed ``HR_``, optional ``.env`` in backend/)."""
 
+import secrets
 from platform import system
 from typing import Literal
 
@@ -28,8 +29,8 @@ class Settings(BaseSettings):
 
     # Secrets for fastapi-users token features (verification/reset arrive with
     # ticket 18's System Mailbox; present now so the manager is wired once).
-    reset_password_token_secret: str = "change-me-reset"
-    verification_token_secret: str = "change-me-verify"
+    reset_password_token_secret: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
+    verification_token_secret: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
 
     # Where `vite build` output lives, served by FastAPI when present.
     frontend_dist: str = "../frontend/dist"
@@ -83,6 +84,9 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://127.0.0.1:8000/api/google/callback"
+    google_system_mailbox_redirect_uri: str = (
+        "http://127.0.0.1:8000/api/system-mailbox/google/callback"
+    )
     google_token_encryption_key: str = ""
     public_frontend_url: str = "http://127.0.0.1:5173"
 

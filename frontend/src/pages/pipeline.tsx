@@ -5,7 +5,7 @@ import {
   DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography,
 } from "@/components/ui-compat"
 import { RefreshCw } from "lucide-react"
-import { CreateRoleDialog, OwnerBadge, OwnerSelect } from "@/components/pipeline-controls"
+import { CreateRoleDialog, OwnerBadge, OwnerSelect, RoleCandidateRanking } from "@/components/pipeline-controls"
 import { CandidatePicker } from "@/components/candidate-picker"
 import { InterviewSchedulerDialog } from "@/components/interview-scheduler-dialog"
 import { ownerLabel, roleStatusLabels } from "@/lib/pipeline"
@@ -157,6 +157,7 @@ export function PipelinePage() {
       </Stack>
       {selectedRole.status === "draft" && <Typography color="text.secondary" sx={{ mt: 2, fontSize: 12 }}>این فرصت هنوز پیش‌نویس است؛ برای افزودن کاندیدا آن را باز کنید.</Typography>}
     </Paper>}
+    {selectedRole && <RoleCandidateRanking key={selectedRole.id} roleId={selectedRole.id} />}
     {data && <>
       {!data.roles.length && <Alert severity="info" sx={{ mb: 3 }}>برای شروع، یک فرصت شغلی بسازید و آن را باز کنید. کاندیداهای بانک تا زمان افزودن به فرصت، روی برد قرار نمی‌گیرند.</Alert>}
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3 }}>

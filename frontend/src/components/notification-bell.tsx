@@ -36,7 +36,7 @@ export function NotificationBell() {
       await setNotificationRead(item.id, read)
       await load()
       // Accept only the server's narrow, structured internal Candidate deep-link shape.
-      if (open && item.href && /^\/candidates\/[0-9a-f-]{36}\?tab=notes(?:&[a-z]+=[0-9a-f-]{36})*$/.test(item.href)) {
+      if (open && item.href && (/^\/candidates\/[0-9a-f-]{36}\?tab=notes(?:&[a-z]+=[0-9a-f-]{36})*$/.test(item.href) || /^\/events\/[0-9a-f-]{36}$/.test(item.href))) {
         setOpen(false); navigate(item.href)
       }
     } catch (cause) { setError(persianError(cause)) } finally { setBusy(null) }
@@ -54,10 +54,10 @@ export function NotificationBell() {
       {!data && !error && <div className="grid place-items-center p-8"><Spinner aria-label="بارگذاری اعلان‌ها" /></div>}
       {data && !data.items.length && <Empty className="py-10"><EmptyHeader><EmptyMedia variant="icon"><Bell /></EmptyMedia><EmptyTitle>همه‌چیز را دیده‌اید</EmptyTitle><EmptyDescription>اشاره همکاران و رویدادهای جدید اینجا نمایش داده می‌شوند.</EmptyDescription></EmptyHeader></Empty>}
       {data?.items.map(item => <article key={item.id} className="border-b p-5" style={{ background: item.read_at ? "var(--card)" : "var(--accent)" }}>
-        <p className="text-xs font-semibold">{item.kind === "note_mention" ? "در یک یادداشت به شما اشاره شده است" : "رویداد جدید در درخواست شغلی"}</p>
+        <p className="text-xs font-semibold">{item.kind === "note_mention" ? "در یک یادداشت به شما اشاره شده است" : item.kind === "event_reminder" ? "رویداد سازمانی شما به‌زودی شروع می‌شود" : "رویداد جدید در درخواست شغلی"}</p>
         <p className="mt-1 text-[11px] text-muted-foreground">{formatJalali(item.created_at)} / {item.read_at ? "خوانده‌شده" : "خوانده‌نشده"}</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {item.href && <Button variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => void update(item, true, true)}>مشاهده یادداشت</Button>}
+          {item.href && <Button variant="outline" size="sm" disabled={Boolean(busy)} onClick={() => void update(item, true, true)}>{item.kind === "event_reminder" ? "مشاهدهٔ رویداد" : "مشاهده یادداشت"}</Button>}
           <Button variant="ghost" size="sm" disabled={Boolean(busy)} onClick={() => void update(item, !item.read_at)}>{item.read_at ? "خوانده‌نشده" : "خواندم"}</Button>
         </div>
       </article>)}

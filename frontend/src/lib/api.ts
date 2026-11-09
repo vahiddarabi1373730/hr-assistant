@@ -14,6 +14,34 @@ export interface Me {
   email: string
   org: { id: string; name: string; slug: string }
   role: "admin" | "member"
+  is_verified: boolean
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  role: "admin" | "member"
+  is_active: boolean
+  is_verified: boolean
+  joined_at: string
+}
+
+export interface AdminInvitation {
+  id: string
+  email: string
+  expires_at: string
+  created_at: string
+  expired: boolean
+}
+
+export interface AdminUsers {
+  users: AdminUser[]
+  invitations: AdminInvitation[]
+}
+
+export interface SystemMailbox {
+  connected: boolean
+  email: string | null
 }
 
 export interface SignupInput {
@@ -137,6 +165,9 @@ const PERSIAN_ERRORS: Record<string, string> = {
   NOTIFICATION_NOT_FOUND: "این اعلان در فهرست شخصی شما در دسترس نیست.",
   EMPTY_NOTE: "متن یادداشت را وارد کنید.",
   INVALID_ROLE_TRANSITION: "این تغییر وضعیت مجاز نیست؛ صفحه را تازه کنید.",
+  INVALID_ROLE_DETAILS: "مشخصات فرصت شغلی معتبر نیست.",
+  ROLE_MATCHING_NOT_CONFIGURED: "سرویس مقایسهٔ رزومه تنظیم نشده است؛ تنظیمات هوش مصنوعی را بررسی کنید.",
+  ROLE_MATCHING_UNAVAILABLE: "مقایسهٔ رزومه با فرصت شغلی در دسترس نیست؛ دوباره تلاش کنید.",
   ROLE_TITLE_REQUIRED: "عنوان فرصت شغلی را وارد کنید.",
   APPLICATION_NOT_FOUND: "درخواست شغلی پیدا نشد؛ ممکن است ادغام شده باشد.",
   INTERVIEW_CANCELLATION_UNAVAILABLE: "لغو رویداد تقویم ممکن نشد؛ اتصال Google مصاحبه‌کننده را بررسی کنید و دوباره تلاش کنید.",
@@ -157,6 +188,28 @@ const PERSIAN_ERRORS: Record<string, string> = {
   RESUME_SUPERSEDED: "نسخهٔ جدیدتری از این رزومه دریافت شده است؛ پروندهٔ فرد را باز کنید.",
   LOGIN_BAD_CREDENTIALS: "رایانامه یا گذرواژه نادرست است.",
   REGISTER_USER_ALREADY_EXISTS: "این رایانامه قبلاً ثبت شده است.",
+  ADMIN_REQUIRED: "این عملیات فقط برای مدیر سازمان مجاز است.",
+  SYSTEM_MAILBOX_NOT_CONNECTED: "ابتدا صندوق رایانامهٔ سازمان را به Google متصل کنید.",
+  GOOGLE_NOT_CONFIGURED: "تنظیمات اتصال Google روی سرور کامل نیست.",
+  GOOGLE_OAUTH_FAILED: "اتصال به Google انجام نشد؛ دوباره تلاش کنید.",
+  GOOGLE_EMAIL_NOT_VERIFIED: "رایانامهٔ تأییدشده‌ای از حساب Google دریافت نشد.",
+  GOOGLE_REFRESH_TOKEN_MISSING: "Google اجازهٔ دسترسی پایدار نداد؛ اتصال را دوباره آغاز کنید.",
+  GOOGLE_TOKEN_REVOKE_FAILED: "لغو دسترسی Google ممکن نشد؛ حساب غیرفعال نشد.",
+  USER_ALREADY_EXISTS: "این رایانامه از قبل در سامانه ثبت شده است.",
+  INVITATION_NOT_FOUND: "دعوت پیدا نشد یا قبلاً پذیرفته شده است.",
+  INVALID_INVITATION: "پیوند دعوت معتبر نیست یا قبلاً استفاده شده است.",
+  INVITATION_EXPIRED: "مهلت این دعوت تمام شده است؛ از مدیر بخواهید دعوت تازه‌ای بفرستد.",
+  USER_NOT_FOUND: "عضو سازمان پیدا نشد.",
+  USER_ALREADY_INACTIVE: "این حساب قبلاً غیرفعال شده است.",
+  CANNOT_DEACTIVATE_SELF: "برای جلوگیری از قفل‌شدن حساب سازمان، نمی‌توانید حساب خودتان را غیرفعال کنید.",
+  LAST_ACTIVE_ADMIN: "ابتدا باید مدیر فعال دیگری برای سازمان داشته باشید.",
+  NO_MEMBERSHIP: "عضویت سازمانی برای این حساب پیدا نشد.",
+  PASSWORD_RESET_TOKEN_INVALID: "پیوند تغییر گذرواژه معتبر نیست یا مهلتش تمام شده است.",
+  VERIFY_USER_TOKEN_INVALID: "پیوند تأیید رایانامه معتبر نیست یا مهلتش تمام شده است.",
+  RESET_PASSWORD_BAD_TOKEN: "پیوند بازیابی گذرواژه معتبر نیست یا مهلتش تمام شده است.",
+  RESET_PASSWORD_INVALID_PASSWORD: "گذرواژهٔ تازه معتبر نیست.",
+  VERIFY_USER_BAD_TOKEN: "پیوند تأیید رایانامه معتبر نیست یا مهلتش تمام شده است.",
+  VERIFY_USER_ALREADY_VERIFIED: "رایانامهٔ این حساب قبلاً تأیید شده است.",
   PASSWORD_TOO_SHORT: "گذرواژه باید دست‌کم ۸ نویسه باشد.",
   EMPTY_FILE: "فایل خالی است.",
   FILE_TOO_LARGE: "حجم فایل بیش از حد مجاز است (۱۰ مگابایت).",
@@ -255,6 +308,12 @@ export async function deleteResume(id: string): Promise<void> {
   if (!res.ok) await throwApiError(res)
 }
 
+export async function deleteCandidate(id: string): Promise<void> {
+  const res = await request(`/api/candidates/${id}`, { method: "DELETE" })
+  if (!res.ok) await throwApiError(res)
+  window.dispatchEvent(new Event("ingestion-changed"))
+}
+
 /** Map an API error to a Persian, user-facing message. */
 export function persianError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -324,6 +383,89 @@ export async function logout(): Promise<void> {
   if (!res.ok && res.status !== 401) await throwApiError(res)
 }
 
+export async function fetchAdminUsers(): Promise<AdminUsers> {
+  const res = await request("/api/admin/users")
+  if (!res.ok) await throwApiError(res)
+  return (await res.json()) as AdminUsers
+}
+
+export async function fetchSystemMailbox(): Promise<SystemMailbox> {
+  const res = await request("/api/admin/system-mailbox")
+  if (!res.ok) await throwApiError(res)
+  return (await res.json()) as SystemMailbox
+}
+
+export async function connectSystemMailbox(): Promise<string> {
+  const res = await request("/api/admin/system-mailbox/connect", { method: "POST" })
+  if (!res.ok) await throwApiError(res)
+  const data = (await res.json()) as { authorization_url: string }
+  return data.authorization_url
+}
+
+export async function inviteUser(email: string): Promise<void> {
+  const res = await request("/api/admin/invitations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function resendInvitation(id: string): Promise<void> {
+  const res = await request(`/api/admin/invitations/${id}/resend`, { method: "POST" })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function deactivateUser(id: string): Promise<void> {
+  const res = await request(`/api/admin/users/${id}/deactivate`, { method: "POST" })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function acceptInvitation(token: string, password: string): Promise<void> {
+  const res = await request("/api/invitations/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  const res = await request("/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  const res = await request("/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function requestEmailVerification(email: string): Promise<void> {
+  const res = await request("/auth/request-verify-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  const res = await request("/auth/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
 /** Upload a resume — the sync path; the outcome carries the terminal status. */
 export async function uploadResume(file: File): Promise<UploadResult> {
   const body = new FormData()
@@ -364,6 +506,32 @@ export interface PipelineRole {
   title: string
   status: "draft" | "open" | "paused" | "closed"
   owner_id: string | null
+  details: RoleDetails
+}
+export interface RoleDetails {
+  description: string
+  responsibilities: string[]
+  required_skills: string[]
+  preferred_skills: string[]
+  min_experience_years: number | null
+  education: string
+  seniority: "" | "intern" | "junior" | "mid" | "senior" | "lead"
+  employment_type: "" | "full_time" | "part_time" | "contract" | "internship"
+  work_mode: "" | "onsite" | "hybrid" | "remote"
+  location: string
+  salary_range: string
+}
+export interface RankedRoleCandidate {
+  application_id: string
+  candidate_id: string
+  full_name: string
+  email: string | null
+  similarity: number | null
+}
+export interface RoleMatchResult {
+  candidate_id: string
+  similarity: number | null
+  mode: "semantic" | "llm"
 }
 export interface PipelineOwner { id: string; email: string; active: boolean }
 export interface PipelineApplication {
@@ -403,8 +571,14 @@ async function pipelineRequest<T>(path: string, method = "GET", body?: unknown, 
 export const fetchPipelineBoard = (signal?: AbortSignal) => pipelineRequest<PipelineBoard>("pipeline/board", "GET", undefined, signal)
 export const fetchPipelineOwners = (signal?: AbortSignal) => pipelineRequest<{ items: PipelineOwner[] }>("pipeline/owners", "GET", undefined, signal)
 export const fetchRoles = (signal?: AbortSignal) => pipelineRequest<{ items: PipelineRole[] }>("roles", "GET", undefined, signal)
-export const createRole = (title: string, owner_id: string | null) => pipelineRequest<PipelineRole>("roles", "POST", { title, owner_id })
-export const editRole = (id: string, changes: Partial<Pick<PipelineRole, "title" | "status" | "owner_id">>) => pipelineRequest<PipelineRole>(`roles/${id}`, "PATCH", changes)
+export const createRole = (title: string, owner_id: string | null, details: RoleDetails) => pipelineRequest<PipelineRole>("roles", "POST", { title, owner_id, details })
+export const editRole = (id: string, changes: Partial<Pick<PipelineRole, "title" | "status" | "owner_id" | "details">>) => pipelineRequest<PipelineRole>(`roles/${id}`, "PATCH", changes)
+export async function deleteRole(id: string): Promise<void> {
+  const response = await request(`/api/roles/${id}`, { method: "DELETE" })
+  if (!response.ok) await throwApiError(response)
+}
+export const rankRoleCandidates = (id: string) => pipelineRequest<{ items: RankedRoleCandidate[]; mode: "semantic" | "llm"; unranked_count: number }>(`roles/${id}/rank`, "POST")
+export const matchCandidateToRole = (roleId: string, candidateId: string) => pipelineRequest<RoleMatchResult>(`roles/${roleId}/candidates/${candidateId}/match`, "POST")
 export const addToRole = (role: string, candidate_id: string, owner_id: string | null = null) => pipelineRequest<{ id: string }>(`roles/${role}/applications`, "POST", { candidate_id, owner_id })
 export async function deleteApplication(id: string): Promise<void> {
   const response = await request(`/api/applications/${id}`, { method: "DELETE" })

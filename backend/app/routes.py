@@ -11,22 +11,33 @@ from fastapi_users import InvalidPasswordException
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
 from fastapi_users.exceptions import UserAlreadyExists
 from pydantic import BaseModel
-from sqlalchemy import or_, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from app.config import settings
 from app.db import get_session
-from app.models import Candidate, ParseJob, ParseJobStatus, ResumeFile
+from app.deletion import cancel_application_interviews
+from app.models import (
+    Candidate,
+    CandidateApplication,
+    CandidateNote,
+    OrgActivity,
+    ParseJob,
+    ParseJobStatus,
+    ResumeFile,
+)
 from app.parsing.extract_text import sniff_kind
 from app.parsing.llm import ResumeExtractor, get_extractor
 from app.parsing.pipeline import process_parse_job
+from app.profiles import lock_org
 from app.tenancy import TenantContextDep, load_membership_with_org
 from app.users import (
     SESSION_COOKIE_ATTRS,
     UserCreate,
     UserManagerDep,
+    UserRead,
     auth_backend,
     fastapi_users,
     get_database_strategy,
@@ -57,6 +68,7 @@ class MeResponse(BaseModel):
     email: str
     org: OrgOut
     role: Literal["admin", "member"]
+    is_verified: bool
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -117,6 +129,7 @@ async def me(ctx: TenantContextDep) -> MeResponse:
         email=ctx.user.email,
         org=OrgOut(id=ctx.org.id, name=ctx.org.name, slug=ctx.org.slug),
         role=ctx.membership.role.value,
+        is_verified=ctx.user.is_verified,
     )
 
 
@@ -244,9 +257,7 @@ async def upload_resume(
 
     duplicate: ResumeFile | None = (
         await session.execute(
-            select(ResumeFile).where(
-                ResumeFile.org_id == ctx.org.id, ResumeFile.sha256 == sha256
-            )
+            select(ResumeFile).where(ResumeFile.org_id == ctx.org.id, ResumeFile.sha256 == sha256)
         )
     ).scalar_one_or_none()
 
@@ -289,10 +300,7 @@ async def upload_resume(
         retryable_ai_error = bool(
             job
             and job.status == ParseJobStatus.NEEDS_REVIEW
-            and (
-                job.reason == "vision_unavailable"
-                or (job.reason or "").startswith("api_error:")
-            )
+            and (job.reason == "vision_unavailable" or (job.reason or "").startswith("api_error:"))
         )
         if job is not None and (
             (job.status == ParseJobStatus.FAILED and "inbound:" not in (job.reason or ""))
@@ -339,9 +347,7 @@ async def upload_resume(
     session.add(job)
     await session.flush()
 
-    await process_parse_job(
-        session, job, resume, extractor=extractor, actor_user_id=ctx.user.id
-    )
+    await process_parse_job(session, job, resume, extractor=extractor, actor_user_id=ctx.user.id)
     # Read within the request transaction: the tenant GUC is transaction-local
     # and the RLS policy would hide the row after commit.
     candidate = (
@@ -408,9 +414,7 @@ async def get_candidate(
 ) -> CandidateDetail:
     candidate = (
         await session.execute(
-            select(Candidate).where(
-                Candidate.id == candidate_id, Candidate.org_id == ctx.org.id
-            )
+            select(Candidate).where(Candidate.id == candidate_id, Candidate.org_id == ctx.org.id)
         )
     ).scalar_one_or_none()
     if candidate is None:
@@ -444,5 +448,69 @@ async def get_candidate(
     )
 
 
+@api_router.delete(
+    "/candidates/{candidate_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    name="api:candidates:delete",
+)
+async def delete_candidate(
+    candidate_id: UUID,
+    ctx: TenantContextDep,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    await lock_org(session, ctx.org.id)
+    candidate = await session.scalar(
+        select(Candidate).where(
+            Candidate.id == candidate_id,
+            Candidate.org_id == ctx.org.id,
+        )
+    )
+    if candidate is None:
+        raise HTTPException(status_code=404, detail="CANDIDATE_NOT_FOUND")
+
+    applications = (
+        await session.scalars(
+            select(CandidateApplication).where(
+                CandidateApplication.org_id == ctx.org.id,
+                CandidateApplication.candidate_id == candidate.id,
+            )
+        )
+    ).all()
+    await cancel_application_interviews(
+        session, ctx.org.id, [application.id for application in applications]
+    )
+
+    await session.execute(
+        delete(CandidateNote).where(
+            CandidateNote.org_id == ctx.org.id,
+            CandidateNote.candidate_id == candidate.id,
+        )
+    )
+    for application in applications:
+        await session.delete(application)
+    await session.execute(
+        delete(ResumeFile).where(
+            ResumeFile.org_id == ctx.org.id,
+            ResumeFile.candidate_id == candidate.id,
+        )
+    )
+    session.add(
+        OrgActivity(
+            org_id=ctx.org.id,
+            actor_user_id=ctx.user.id,
+            event_type="candidate_deleted",
+            data={"candidate_id": str(candidate.id)},
+        )
+    )
+    await session.delete(candidate)
+    await session.commit()
+
+
 # Login/logout come straight from the library, wired to our cookie backend.
 auth_router.include_router(fastapi_users.get_auth_router(auth_backend))
+auth_router.include_router(
+    fastapi_users.get_reset_password_router(),
+)
+auth_router.include_router(
+    fastapi_users.get_verify_router(UserRead),
+)

@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router"
-import { Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@/components/ui-compat"
+import {
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, Paper, Stack, Typography,
+} from "@/components/ui-compat"
 import { CreateRoleDialog, OwnerBadge } from "@/components/pipeline-controls"
 import { roleStatusLabels } from "@/lib/pipeline"
-import { fetchRoles, fetchPipelineOwners, persianError, type PipelineRole, type PipelineOwner } from "@/lib/api"
+import { deleteRole, fetchRoles, fetchPipelineOwners, persianError, type PipelineRole, type PipelineOwner } from "@/lib/api"
+import { Trash2 } from "lucide-react"
 
 export function RolesPage() {
   const [roles, setRoles] = useState<PipelineRole[] | null>(null)
   const [owners, setOwners] = useState<PipelineOwner[]>([])
   const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState<PipelineRole | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -20,6 +27,20 @@ export function RolesPage() {
     void Promise.resolve().then(() => load(controller.signal)).catch(cause => { if (!controller.signal.aborted) setError(persianError(cause)) })
     return () => controller.abort()
   }, [load])
+  async function removeRole() {
+    if (!deleting) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deleteRole(deleting.id)
+      setRoles(old => old?.filter(role => role.id !== deleting.id) ?? null)
+      setDeleting(null)
+    } catch (cause) {
+      setDeleteError(persianError(cause))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
   return <>
     <Stack direction={{ xs: "column", sm: "row" }} sx={{ justifyContent: "space-between", alignItems: { sm: "flex-start" }, gap: 2, mb: 3 }}>
       <Box><Typography variant="h4">فرصت‌های شغلی</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>پیش‌نویس بسازید، مسئول مشخص کنید و برای شروع جذب آن را باز کنید.</Typography></Box>
@@ -33,9 +54,27 @@ export function RolesPage() {
         <Box><Button component={Link} to={`/roles/${role.id}`} sx={{ p: 0, fontSize: 18, fontWeight: 750 }}><span dir="auto">{role.title}</span></Button>
           <Stack direction="row" spacing={1} sx={{ mt: 1 }}><Chip size="small" label={roleStatusLabels[role.status]} color={role.status === "open" ? "success" : "default"} /><OwnerBadge owners={owners} id={role.owner_id} /></Stack>
         </Box>
-        <Button component={Link} to={`/roles/${role.id}`} variant="outlined">برد و تنظیمات فرصت</Button>
+        <Stack direction="row" spacing={1}>
+          <Button component={Link} to={`/roles/${role.id}`} variant="outlined">برد و تنظیمات فرصت</Button>
+          <Button color="error" variant="outlined" startIcon={<Trash2 size={16} />} onClick={() => { setDeleteError(null); setDeleting(role) }}>حذف</Button>
+        </Stack>
       </Stack>
     </Paper>)}</Stack>
     <CreateRoleDialog open={creating} onClose={() => setCreating(false)} owners={owners} onCreated={role => { setCreating(false); navigate(`/roles/${role.id}`) }} />
+    <Dialog open={Boolean(deleting)} onClose={deleteBusy ? undefined : () => setDeleting(null)} maxWidth="xs" fullWidth>
+      <DialogTitle>حذف فرصت شغلی</DialogTitle>
+      <DialogContent>
+        {deleteError && <Alert severity="error" sx={{ mb: 2 }}>{deleteError}</Alert>}
+        <DialogContentText>
+          با حذف «{deleting?.title}»، درخواست‌ها و سوابق استخدامی آن حذف می‌شوند. مصاحبه‌های تقویمی لغو می‌شوند و یادداشت‌های کاندیداها حفظ خواهند شد. گزارش ممیزی سازمان باقی می‌ماند. این کار قابل بازگشت نیست.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button disabled={deleteBusy} onClick={() => setDeleting(null)}>انصراف</Button>
+        <Button color="error" variant="contained" disabled={deleteBusy} onClick={() => void removeRole()}>
+          {deleteBusy ? "در حال حذف…" : "حذف فرصت و سوابق"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   </>
 }

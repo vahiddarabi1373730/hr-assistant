@@ -6,6 +6,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Paper,
   Stack,
   Table,
@@ -17,13 +22,17 @@ import {
   TextField,
   Typography,
 } from "@/components/ui-compat"
-import { fetchCandidates, persianError, type CandidateSummary } from "@/lib/api"
+import { deleteCandidate, fetchCandidates, persianError, type CandidateSummary } from "@/lib/api"
 import { formatJalali } from "@/lib/jalali"
+import { Trash2 } from "lucide-react"
 
 export function CandidateBankPage() {
   const [items, setItems] = useState<CandidateSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
+  const [deleting, setDeleting] = useState<CandidateSummary | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   useEffect(() => {
     let active = true
     fetchCandidates()
@@ -42,6 +51,20 @@ export function CandidateBankPage() {
       .toLocaleLowerCase()
       .includes(search.toLocaleLowerCase()),
   )
+  async function removeCandidate() {
+    if (!deleting) return
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      await deleteCandidate(deleting.id)
+      setItems((old) => old?.filter((item) => item.id !== deleting.id) ?? null)
+      setDeleting(null)
+    } catch (cause) {
+      setDeleteError(persianError(cause))
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
   return (
     <>
       <Typography variant="h4">بانک کاندیداها</Typography>
@@ -75,7 +98,7 @@ export function CandidateBankPage() {
                   <TableCell>نام و عنوان حرفه‌ای</TableCell>
                   <TableCell>ایمیل</TableCell>
                   <TableCell>تاریخ ثبت</TableCell>
-                  <TableCell>پرونده</TableCell>
+                  <TableCell>عملیات</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -108,9 +131,23 @@ export function CandidateBankPage() {
                     </TableCell>
                     <TableCell>{formatJalali(item.created_at)}</TableCell>
                     <TableCell>
-                      <Button component={Link} to={`/candidates/${item.id}`}>
-                        مشاهدهٔ پروفایل
-                      </Button>
+                      <Stack direction="row" spacing={1}>
+                        <Button component={Link} to={`/candidates/${item.id}`}>
+                          مشاهدهٔ پروفایل
+                        </Button>
+                        <Button
+                          color="error"
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Trash2 size={16} />}
+                          onClick={() => {
+                            setDeleteError(null)
+                            setDeleting(item)
+                          }}
+                        >
+                          حذف
+                        </Button>
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -127,6 +164,40 @@ export function CandidateBankPage() {
           </Stack>
         )}
       </Paper>
+      <Dialog
+        open={Boolean(deleting)}
+        onClose={deleteBusy ? undefined : () => setDeleting(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>حذف کامل کاندیدا</DialogTitle>
+        <DialogContent>
+          {deleteError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {deleteError}
+            </Alert>
+          )}
+          <DialogContentText>
+            پروندهٔ «{deleting?.full_name}»، همهٔ فایل‌های رزومه، درخواست‌ها،
+            یادداشت‌ها و تاریخچهٔ مرتبط حذف می‌شوند. مصاحبه‌های تقویمی لغو خواهند
+            شد. گزارش ممیزی سازمان که شناسهٔ رکوردها را نگه می‌دارد حذف نمی‌شود.
+            این کار قابل بازگشت نیست.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button disabled={deleteBusy} onClick={() => setDeleting(null)}>
+            انصراف
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={deleteBusy}
+            onClick={() => void removeCandidate()}
+          >
+            {deleteBusy ? "در حال حذف…" : "حذف کامل کاندیدا"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
