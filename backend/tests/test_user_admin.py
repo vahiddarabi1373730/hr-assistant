@@ -154,6 +154,33 @@ async def test_invite_accept_and_deactivate_preserves_membership(
     assert reused.status_code == 400
 
 
+async def test_user_can_create_another_organization(api_client):
+    first = await api_client.post(
+        "/auth/signup",
+        json={
+            "email": "second-org-owner@example.com",
+            "password": PASSWORD,
+            "org_name": "First Company",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    created = await api_client.post(
+        "/api/organizations",
+        json={"name": "Second Company"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["name"] == "Second Company"
+
+    me = await api_client.get(
+        "/api/me",
+        headers={"X-Organization-ID": created.json()["id"]},
+    )
+    assert me.status_code == 200, me.text
+    assert me.json()["org"]["name"] == "Second Company"
+    assert len(me.json()["organizations"]) == 2
+
+
 async def test_member_cannot_access_admin_user_management(api_client, superuser_engine):
     signup = await api_client.post(
         "/auth/signup",

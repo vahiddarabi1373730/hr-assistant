@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link, useNavigate, useSearchParams } from "react-router"
 import { Wordmark } from "@/components/shell"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,7 @@ const headings: Record<AccountActionMode, string> = {
 
 export function AccountActionsPage({ mode }: { mode: AccountActionMode }) {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const token = searchParams.get("token") ?? ""
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -44,10 +45,10 @@ export function AccountActionsPage({ mode }: { mode: AccountActionMode }) {
     if (!token) return
     let active = true
     verifyEmail(token)
-      .then(() => { if (active) setMessage("رایانامهٔ حساب شما تأیید شد.") })
+      .then(() => { if (active) navigate("/settings/users", { replace: true }) })
       .catch(cause => { if (active) setError(persianError(cause)) })
     return () => { active = false }
-  }, [mode, token])
+  }, [mode, navigate, token])
 
   useEffect(() => {
     if (mode !== "accept-invite" || !token) return

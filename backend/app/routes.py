@@ -24,6 +24,7 @@ from app.models import (
     CandidateApplication,
     CandidateNote,
     Membership,
+    MembershipRole,
     Org,
     OrgActivity,
     ParseJob,
@@ -33,7 +34,9 @@ from app.models import (
 from app.parsing.extract_text import sniff_kind
 from app.parsing.llm import ResumeExtractor, get_extractor
 from app.parsing.pipeline import process_parse_job
+from app.pipeline_defaults import seed_stages
 from app.profiles import lock_org
+from app.rls import set_current_org
 from app.tenancy import TenantContextDep, load_membership_with_org
 from app.users import (
     SESSION_COOKIE_ATTRS,
@@ -43,6 +46,7 @@ from app.users import (
     auth_backend,
     fastapi_users,
     get_database_strategy,
+    unique_org_slug,
 )
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -73,6 +77,10 @@ class MeResponse(BaseModel):
     role: Literal["admin", "member"]
     is_verified: bool
     organizations: list[OrgOut]
+
+
+class CreateOrgInput(BaseModel):
+    name: str
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -147,6 +155,36 @@ async def me(
         is_verified=ctx.user.is_verified,
         organizations=[OrgOut(id=org.id, name=org.name, slug=org.slug) for org in organizations],
     )
+
+
+@api_router.post("/organizations", status_code=status.HTTP_201_CREATED, response_model=OrgOut)
+async def create_organization(
+    data: CreateOrgInput,
+    ctx: TenantContextDep,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OrgOut:
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ORG_NAME_REQUIRED")
+
+    org = Org(name=name, slug=await unique_org_slug(session, name))
+    session.add(org)
+    await session.flush()
+    session.add_all(
+        [
+            Membership(user_id=ctx.user.id, org_id=org.id, role=MembershipRole.ADMIN),
+            OrgActivity(
+                org_id=org.id,
+                actor_user_id=ctx.user.id,
+                event_type="org_created",
+                data={"org_name": org.name},
+            ),
+        ]
+    )
+    await set_current_org(session, org.id)
+    seed_stages(session, org.id)
+    await session.commit()
+    return OrgOut(id=org.id, name=org.name, slug=org.slug)
 
 
 # --------------------------------------------------------------------------

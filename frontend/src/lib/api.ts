@@ -52,6 +52,12 @@ export interface SignupInput {
   org_name: string
 }
 
+export interface Organization {
+  id: string
+  name: string
+  slug: string
+}
+
 /** One parse job — every submitted document ends in an explicit status. */
 export interface ParseJobInfo {
   id: string
@@ -190,6 +196,7 @@ const PERSIAN_ERRORS: Record<string, string> = {
   RESUME_SUPERSEDED: "نسخهٔ جدیدتری از این رزومه دریافت شده است؛ پروندهٔ فرد را باز کنید.",
   LOGIN_BAD_CREDENTIALS: "رایانامه یا گذرواژه نادرست است.",
   REGISTER_USER_ALREADY_EXISTS: "این رایانامه قبلاً ثبت شده است.",
+  ORG_NAME_REQUIRED: "نام فضای کاری را وارد کنید.",
   ADMIN_REQUIRED: "این عملیات فقط برای مدیر سازمان مجاز است.",
   SYSTEM_MAILBOX_NOT_CONNECTED: "ابتدا صندوق رایانامهٔ سازمان را به Google متصل کنید.",
   GOOGLE_NOT_CONFIGURED: "تنظیمات اتصال Google روی سرور کامل نیست.",
@@ -385,6 +392,16 @@ export async function signup(input: SignupInput): Promise<Me> {
   })
   if (!res.ok) await throwApiError(res)
   return (await res.json()) as Me
+}
+
+export async function createOrganization(name: string): Promise<Organization> {
+  const res = await request("/api/organizations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) await throwApiError(res)
+  return (await res.json()) as Organization
 }
 
 export async function logout(): Promise<void> {

@@ -6,7 +6,7 @@ import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
-import { fetchIngestionSettings, logout } from "@/lib/api"
+import { createOrganization, fetchIngestionSettings, logout, persianError } from "@/lib/api"
 
 export function Wordmark() {
   return <div className="wordmark">
@@ -33,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [creatingOrg, setCreatingOrg] = useState(false)
   const [logoutError, setLogoutError] = useState(false)
   const [reviewCount, setReviewCount] = useState<number | null>(null)
   useEffect(() => {
@@ -56,6 +57,23 @@ export function AppShell({ children }: { children: ReactNode }) {
     catch { setLogoutError(true) }
     finally { setLeaving(false) }
   }
+
+  async function createWorkspace() {
+    const name = window.prompt("نام فضای کاری جدید را وارد کنید:", "")
+    const trimmed = name?.trim()
+    if (!trimmed) return
+    setCreatingOrg(true)
+    try {
+      const org = await createOrganization(trimmed)
+      window.localStorage.setItem("active-organization-id", org.id)
+      await refresh()
+    } catch (error) {
+      window.alert(persianError(error))
+    } finally {
+      setCreatingOrg(false)
+    }
+  }
+
   const current = navigation.find(item => pathname === item.path || pathname.startsWith(item.path + "/"))
   const visibleNavigation = navigation.filter(item => !item.adminOnly || me?.role === "admin")
   const pageTitle = pathname === "/upload" ? "بارگذاری رزومه" : current?.title ?? "فضای کار استخدام"
@@ -88,7 +106,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       {menu}
       <div className="sidebar-bottom">
         {account}
-      </div>
+      <Button variant="secondary" size="sm" className="mt-2 w-full" disabled={creatingOrg} onClick={() => void createWorkspace()}>
+        {creatingOrg ? "در حال ایجاد…" : "ایجاد فضای کاری جدید"}
+      </Button>
+    </div>
     </aside>
     <div className="workspace-body">
       <header className="workspace-header">
@@ -102,7 +123,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent side="right" className="w-[min(300px,90vw)] p-0" aria-describedby={undefined}>
-        <div className="mobile-navigation"><SheetTitle className="sr-only">منوی فضای کار استخدام</SheetTitle><Wordmark />{menu}<div className="mt-auto">{account}<Button variant="secondary" render={<Link to="/upload" onClick={() => setOpen(false)} />} nativeButton={false} className="mt-5 w-full">بارگذاری رزومه<ArrowLeft data-icon="inline-end" /></Button></div></div>
+        <div className="mobile-navigation"><SheetTitle className="sr-only">منوی فضای کار استخدام</SheetTitle><Wordmark />{menu}<div className="mt-auto">{account}<Button variant="secondary" size="sm" className="mt-2 w-full" disabled={creatingOrg} onClick={() => void createWorkspace()}> {creatingOrg ? "در حال ایجاد…" : "ایجاد فضای کاری جدید"}</Button><Button variant="secondary" render={<Link to="/upload" onClick={() => setOpen(false)} />} nativeButton={false} className="mt-5 w-full">بارگذاری رزومه<ArrowLeft data-icon="inline-end" /></Button></div></div>
       </SheetContent>
     </Sheet>
   </div>
