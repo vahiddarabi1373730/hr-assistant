@@ -15,6 +15,7 @@ export interface Me {
   org: { id: string; name: string; slug: string }
   role: "admin" | "member"
   is_verified: boolean
+  organizations: { id: string; name: string; slug: string }[]
 }
 
 export interface AdminUser {
@@ -29,6 +30,7 @@ export interface AdminUser {
 export interface AdminInvitation {
   id: string
   email: string
+  role: "admin" | "member"
   expires_at: string
   created_at: string
   expired: boolean
@@ -196,12 +198,16 @@ const PERSIAN_ERRORS: Record<string, string> = {
   GOOGLE_REFRESH_TOKEN_MISSING: "Google اجازهٔ دسترسی پایدار نداد؛ اتصال را دوباره آغاز کنید.",
   GOOGLE_TOKEN_REVOKE_FAILED: "لغو دسترسی Google ممکن نشد؛ حساب غیرفعال نشد.",
   USER_ALREADY_EXISTS: "این رایانامه از قبل در سامانه ثبت شده است.",
+  EXISTING_USER_NOT_FOUND: "برای این رایانامه حسابی پیدا نشد؛ ابتدا باید ثبت‌نام کند.",
+  USER_ALREADY_MEMBER: "این حساب از قبل عضو همین سازمان است.",
+  USER_INACTIVE: "این حساب غیرفعال است و ابتدا باید دوباره فعال شود.",
   INVITATION_NOT_FOUND: "دعوت پیدا نشد یا قبلاً پذیرفته شده است.",
   INVALID_INVITATION: "پیوند دعوت معتبر نیست یا قبلاً استفاده شده است.",
   INVITATION_EXPIRED: "مهلت این دعوت تمام شده است؛ از مدیر بخواهید دعوت تازه‌ای بفرستد.",
   USER_NOT_FOUND: "عضو سازمان پیدا نشد.",
   USER_ALREADY_INACTIVE: "این حساب قبلاً غیرفعال شده است.",
   CANNOT_DEACTIVATE_SELF: "برای جلوگیری از قفل‌شدن حساب سازمان، نمی‌توانید حساب خودتان را غیرفعال کنید.",
+  CANNOT_CHANGE_OWN_ROLE: "نقش حساب خودتان را از این صفحه تغییر ندهید؛ مدیر دیگری این کار را انجام دهد.",
   LAST_ACTIVE_ADMIN: "ابتدا باید مدیر فعال دیگری برای سازمان داشته باشید.",
   NO_MEMBERSHIP: "عضویت سازمانی برای این حساب پیدا نشد.",
   PASSWORD_RESET_TOKEN_INVALID: "پیوند تغییر گذرواژه معتبر نیست یا مهلتش تمام شده است.",
@@ -325,7 +331,10 @@ export function persianError(error: unknown): string {
 
 async function request(path: string, init?: RequestInit): Promise<Response> {
   try {
-    return await fetch(path, { credentials: "same-origin", ...init })
+    const headers = new Headers(init?.headers)
+    const organizationId = window.localStorage.getItem("active-organization-id")
+    if (organizationId) headers.set("X-Organization-ID", organizationId)
+    return await fetch(path, { credentials: "same-origin", ...init, headers })
   } catch {
     throw new ApiError(0, "NETWORK")
   }
@@ -402,11 +411,11 @@ export async function connectSystemMailbox(): Promise<string> {
   return data.authorization_url
 }
 
-export async function inviteUser(email: string): Promise<void> {
+export async function inviteUser(email: string, role: AdminUser["role"]): Promise<void> {
   const res = await request("/api/admin/invitations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, role }),
   })
   if (!res.ok) await throwApiError(res)
 }
@@ -421,13 +430,38 @@ export async function deactivateUser(id: string): Promise<void> {
   if (!res.ok) await throwApiError(res)
 }
 
-export async function acceptInvitation(token: string, password: string): Promise<void> {
+export async function addExistingUser(email: string, role: AdminUser["role"]): Promise<void> {
+  const res = await request("/api/admin/users/transfer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, role }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function changeUserRole(id: string, role: AdminUser["role"]): Promise<void> {
+  const res = await request(`/api/admin/users/${id}/role`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  })
+  if (!res.ok) await throwApiError(res)
+}
+
+export async function acceptInvitation(token: string, password?: string): Promise<void> {
   const res = await request("/api/invitations/accept", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({ token, ...(password ? { password } : {}) }),
   })
   if (!res.ok) await throwApiError(res)
+}
+
+export async function previewInvitation(token: string): Promise<{ existing_account: boolean }> {
+  const params = new URLSearchParams({ token })
+  const res = await request(`/api/invitations/preview?${params}`)
+  if (!res.ok) await throwApiError(res)
+  return (await res.json()) as { existing_account: boolean }
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {

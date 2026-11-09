@@ -4,7 +4,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -62,6 +62,7 @@ class UserItem(BaseModel):
 class InvitationItem(BaseModel):
     id: uuid.UUID
     email: str
+    role: str
     expires_at: datetime
     created_at: datetime
     expired: bool
@@ -75,17 +76,33 @@ class UsersResponse(BaseModel):
 class InviteInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     email: EmailStr
+    role: Literal["admin", "member"] = "member"
+
+
+class ExistingMemberInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+    role: Literal["admin", "member"] = "member"
+
+
+class MembershipRoleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["admin", "member"]
 
 
 class AcceptInvitationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token: str = Field(min_length=30, max_length=160)
-    password: str = Field(min_length=1, max_length=1024)
+    password: str | None = Field(default=None, min_length=1, max_length=1024)
 
 
 class MailboxStatus(BaseModel):
     connected: bool
     email: str | None
+
+
+class InvitationPreview(BaseModel):
+    existing_account: bool
 
 
 def _require_admin(ctx: TenantContext) -> None:
@@ -138,12 +155,14 @@ async def _deliver_invitation(
 
     await set_current_org(session, invitation.org_id)
     link = f"{settings.public_frontend_url.rstrip('/')}/accept-invite?token={quote(token, safe='')}"
+    invited_role = "مدیر" if invitation.role == MembershipRole.ADMIN else "عضو"
     await send_system_email(
         session,
         invitation.org_id,
         invitation.email,
         f"دعوت به فضای کار {org_name}",
         f"سلام،\n\nشما به فضای کار «{org_name}» دعوت شده‌اید. "
+        f"نقش شما پس از پذیرش دعوت: {invited_role}\n\n"
         f"برای پیوستن و ساخت گذرواژه، تا ۷ روز آینده از این پیوند استفاده کنید:\n{link}\n\n"
         "این دعوت را فقط در صورتی بپذیرید که منتظر آن بوده‌اید.",
     )
@@ -203,6 +222,7 @@ async def list_org_users(ctx: TenantContextDep, session: SessionDep) -> UsersRes
             InvitationItem(
                 id=invite.id,
                 email=invite.email,
+                role=invite.role.value,
                 expires_at=invite.expires_at,
                 created_at=invite.created_at,
                 expired=invite.expires_at <= now,
@@ -342,9 +362,6 @@ async def invite_member(
     )
     if mailbox_org_id is None:
         raise HTTPException(409, "SYSTEM_MAILBOX_NOT_CONNECTED")
-    if await session.scalar(select(User.id).where(func.lower(User.email) == email)) is not None:
-        raise HTTPException(409, "USER_ALREADY_EXISTS")
-
     await lock_org(session, ctx.org.id)
     invitation = await session.scalar(
         select(OrgInvitation)
@@ -352,13 +369,14 @@ async def invite_member(
         .with_for_update()
     )
     if invitation is not None and invitation.accepted_at is not None:
-        raise HTTPException(409, "USER_ALREADY_EXISTS")
+        raise HTTPException(409, "INVITATION_ALREADY_ACCEPTED")
     if invitation is None:
         _, token_hash, invitation_id = _invite_token(ctx.org.id)
         invitation = OrgInvitation(
             id=invitation_id,
             org_id=ctx.org.id,
             email=email,
+            role=MembershipRole(body.role),
             token_hash=token_hash,
             invited_by=ctx.user.id,
             expires_at=datetime.now(UTC) + _INVITE_LIFETIME,
@@ -366,6 +384,7 @@ async def invite_member(
         session.add(invitation)
     else:
         invitation.invited_by = ctx.user.id
+        invitation.role = MembershipRole(body.role)
         invitation.created_at = datetime.now(UTC)
     await _deliver_invitation(session, invitation, ctx.org.name)
     return {"email": email, "status": "sent"}
@@ -395,6 +414,132 @@ async def resend_invitation(
     return {"email": invitation.email, "status": "sent"}
 
 
+@router.post("/api/admin/users/transfer", status_code=201)
+async def add_existing_member(
+    body: ExistingMemberInput,
+    ctx: TenantContextDep,
+    session: SessionDep,
+) -> dict[str, str]:
+    """Add an existing account to the current organisation."""
+    _require_admin(ctx)
+    email = str(body.email).strip().lower()
+    target = await session.scalar(
+        select(User).where(func.lower(User.email) == email).with_for_update()
+    )
+    if target is None:
+        raise HTTPException(404, "EXISTING_USER_NOT_FOUND")
+    if not target.is_active:
+        raise HTTPException(409, "USER_INACTIVE")
+
+    membership_org_ids = (
+        await session.scalars(
+            select(Membership.org_id)
+            .where(Membership.user_id == target.id)
+            .with_for_update()
+        )
+    ).all()
+    if not membership_org_ids:
+        raise HTTPException(409, "NO_MEMBERSHIP")
+    if ctx.org.id in membership_org_ids:
+        raise HTTPException(409, "USER_ALREADY_MEMBER")
+
+    await lock_org(session, ctx.org.id)
+    session.add(
+        Membership(
+            user_id=target.id,
+            org_id=ctx.org.id,
+            role=MembershipRole(body.role),
+        )
+    )
+
+    session.add(
+        OrgActivity(
+            org_id=ctx.org.id,
+            actor_user_id=ctx.user.id,
+            event_type="existing_user_added",
+            data={"user_id": str(target.id), "email": target.email, "role": body.role},
+        )
+    )
+    await session.commit()
+    return {"email": target.email, "role": body.role, "status": "added"}
+
+
+@router.patch("/api/admin/users/{user_id}/role")
+async def update_member_role(
+    user_id: uuid.UUID,
+    body: MembershipRoleInput,
+    ctx: TenantContextDep,
+    session: SessionDep,
+) -> dict[str, str]:
+    _require_admin(ctx)
+    if user_id == ctx.user.id:
+        raise HTTPException(409, "CANNOT_CHANGE_OWN_ROLE")
+
+    await lock_org(session, ctx.org.id)
+    membership = await session.scalar(
+        select(Membership)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.org_id == ctx.org.id, Membership.user_id == user_id)
+        .with_for_update()
+    )
+    if membership is None:
+        raise HTTPException(404, "USER_NOT_FOUND")
+
+    next_role = MembershipRole(body.role)
+    if membership.role == next_role:
+        return {"status": "unchanged", "role": body.role}
+    if membership.role == MembershipRole.ADMIN and next_role == MembershipRole.MEMBER:
+        active_admins = await session.scalar(
+            select(func.count())
+            .select_from(Membership)
+            .join(User, User.id == Membership.user_id)
+            .where(
+                Membership.org_id == ctx.org.id,
+                Membership.role == MembershipRole.ADMIN,
+                User.is_active.is_(True),
+            )
+        )
+        if active_admins <= 1:
+            raise HTTPException(409, "LAST_ACTIVE_ADMIN")
+
+    membership.role = next_role
+    session.add(
+        OrgActivity(
+            org_id=ctx.org.id,
+            actor_user_id=ctx.user.id,
+            event_type="member_role_changed",
+            data={"user_id": str(user_id), "role": body.role},
+        )
+    )
+    await session.commit()
+    return {"status": "updated", "role": body.role}
+
+
+@router.get("/api/invitations/preview", response_model=InvitationPreview)
+async def preview_invitation(
+    token: Annotated[str, Query(min_length=30, max_length=160)],
+    session: SessionDep,
+) -> InvitationPreview:
+    org_id, invitation_id, token_hash = _parse_invite_token(token)
+    await set_current_org(session, org_id)
+    invitation = await session.scalar(
+        select(OrgInvitation).where(
+            OrgInvitation.id == invitation_id,
+            OrgInvitation.org_id == org_id,
+            OrgInvitation.token_hash == token_hash,
+            OrgInvitation.accepted_at.is_(None),
+        )
+    )
+    if invitation is None:
+        raise HTTPException(400, "INVALID_INVITATION")
+    if invitation.expires_at <= datetime.now(UTC):
+        raise HTTPException(410, "INVITATION_EXPIRED")
+    existing = await session.scalar(
+        select(User.id).where(func.lower(User.email) == invitation.email)
+    )
+    return InvitationPreview(existing_account=existing is not None)
+
+
 @router.post("/api/invitations/accept")
 async def accept_invitation(
     body: AcceptInvitationInput,
@@ -416,33 +561,35 @@ async def accept_invitation(
         raise HTTPException(400, "INVALID_INVITATION")
     if invitation.expires_at <= datetime.now(UTC):
         raise HTTPException(410, "INVITATION_EXPIRED")
-    if (
-        await session.scalar(select(User.id).where(func.lower(User.email) == invitation.email))
-        is not None
+    user = await session.scalar(select(User).where(func.lower(User.email) == invitation.email))
+    if user is None:
+        if body.password is None:
+            raise HTTPException(400, "INVITATION_PASSWORD_REQUIRED")
+        try:
+            await user_manager.validate_password(body.password, body)
+        except InvalidPasswordException as exc:
+            raise HTTPException(
+                400,
+                {"code": "REGISTER_INVALID_PASSWORD", "reason": exc.reason},
+            ) from exc
+        user = User(
+            email=invitation.email,
+            hashed_password=user_manager.password_helper.hash(body.password),
+            is_active=True,
+            is_verified=True,
+        )
+        session.add(user)
+        await session.flush()
+    elif await session.scalar(
+        select(Membership.id).where(Membership.org_id == org_id, Membership.user_id == user.id)
     ):
-        raise HTTPException(409, "USER_ALREADY_EXISTS")
-    try:
-        await user_manager.validate_password(body.password, body)
-    except InvalidPasswordException as exc:
-        raise HTTPException(
-            400,
-            {"code": "REGISTER_INVALID_PASSWORD", "reason": exc.reason},
-        ) from exc
-
-    user = User(
-        email=invitation.email,
-        hashed_password=user_manager.password_helper.hash(body.password),
-        is_active=True,
-        is_verified=True,
-    )
-    session.add(user)
-    await session.flush()
+        raise HTTPException(409, "USER_ALREADY_MEMBER")
     session.add_all(
         [
             Membership(
                 user_id=user.id,
                 org_id=invitation.org_id,
-                role=MembershipRole.MEMBER,
+                role=invitation.role,
             ),
             OrgActivity(
                 org_id=invitation.org_id,
@@ -479,16 +626,14 @@ async def deactivate_user(
         raise HTTPException(404, "USER_NOT_FOUND")
     if not target.is_active:
         raise HTTPException(409, "USER_ALREADY_INACTIVE")
-    if (
-        await session.scalar(
-            select(Membership.id).where(
-                Membership.org_id == ctx.org.id,
-                Membership.user_id == user_id,
-                Membership.role == MembershipRole.ADMIN,
-            )
-        )
-        is not None
-    ):
+    membership = await session.scalar(
+        select(Membership)
+        .where(Membership.org_id == ctx.org.id, Membership.user_id == user_id)
+        .with_for_update()
+    )
+    if membership is None:
+        raise HTTPException(404, "USER_NOT_FOUND")
+    if membership.role == MembershipRole.ADMIN:
         active_admins = await session.scalar(
             select(func.count())
             .select_from(Membership)
@@ -512,6 +657,7 @@ async def deactivate_user(
         await revoke_google_token(decrypt(connection.encrypted_refresh_token))
         await session.delete(connection)
     await session.execute(delete(AccessToken).where(AccessToken.user_id == target.id))
+    membership.role = MembershipRole.MEMBER
     target.is_active = False
     session.add(
         OrgActivity(

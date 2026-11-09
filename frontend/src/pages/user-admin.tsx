@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import {
   Table,
@@ -37,6 +38,7 @@ import {
 } from "@/components/ui/table"
 import {
   ApiError,
+  changeUserRole,
   connectSystemMailbox,
   deactivateUser,
   fetchAdminUsers,
@@ -45,6 +47,7 @@ import {
   persianError,
   requestEmailVerification,
   resendInvitation,
+  addExistingUser,
   type AdminInvitation,
   type AdminUser,
   type AdminUsers,
@@ -71,10 +74,16 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
   const [users, setUsers] = useState<AdminUsers | null>(null)
   const [mailbox, setMailbox] = useState<SystemMailbox | null>(null)
   const [email, setEmail] = useState("")
+  const [inviteRole, setInviteRole] = useState<AdminUser["role"]>("member")
+  const [existingEmail, setExistingEmail] = useState("")
+  const [existingRole, setExistingRole] = useState<AdminUser["role"]>("member")
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [busyInvitation, setBusyInvitation] = useState<string | null>(null)
   const [deactivating, setDeactivating] = useState<AdminUser | null>(null)
+  const [addingExistingUser, setAddingExistingUser] = useState<{ email: string; role: AdminUser["role"] } | null>(null)
+  const [changingRole, setChangingRole] = useState<AdminUser | null>(null)
+  const [nextRole, setNextRole] = useState<AdminUser["role"]>("member")
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const callbackResult = searchParams.get("mailbox")
@@ -118,8 +127,9 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
     setError(null)
     setNotice(null)
     try {
-      await inviteUser(email)
+      await inviteUser(email, inviteRole)
       setEmail("")
+      setInviteRole("member")
       setNotice("دعوت‌نامه از صندوق سازمان فرستاده شد.")
       await load()
     } catch (cause) {
@@ -153,6 +163,52 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
       setError(persianError(cause))
     } finally {
       setBusyInvitation(null)
+    }
+  }
+
+  function startAddExistingUser(event: FormEvent) {
+    event.preventDefault()
+    setError(null)
+    setNotice(null)
+    setAddingExistingUser({ email: existingEmail.trim(), role: existingRole })
+  }
+
+  async function addAccount() {
+    if (!addingExistingUser) return
+    setBusy(true)
+    setError(null)
+    try {
+      await addExistingUser(addingExistingUser.email, addingExistingUser.role)
+      setExistingEmail("")
+      setExistingRole("member")
+      setNotice(`حساب ${addingExistingUser.email} به سازمان اضافه شد.`)
+      setAddingExistingUser(null)
+      await load()
+    } catch (cause) {
+      setError(persianError(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function startRoleChange(user: AdminUser) {
+    setNextRole(user.role)
+    setChangingRole(user)
+  }
+
+  async function changeRole() {
+    if (!changingRole) return
+    setBusy(true)
+    setError(null)
+    try {
+      await changeUserRole(changingRole.id, nextRole)
+      setNotice(`نقش ${changingRole.email} به ${nextRole === "admin" ? "مدیر" : "عضو"} تغییر کرد.`)
+      setChangingRole(null)
+      await load()
+    } catch (cause) {
+      setError(persianError(cause))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -208,7 +264,7 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
       <Button variant="outline" size="sm" onClick={() => void sendVerification()} disabled={busy || loading || !mailbox?.connected} aria-describedby="verification-mailbox-help">ارسال پیوند تأیید</Button>
     </AlertDescription></Alert>}
 
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+    <div className="grid gap-4 xl:grid-cols-3">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Mail aria-hidden="true" />صندوق رایانامهٔ سازمان</CardTitle>
@@ -230,6 +286,31 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2"><UserRoundPlus aria-hidden="true" />افزودن حساب موجود</CardTitle>
+          <CardDescription>حسابی که قبلاً ثبت‌نام کرده است، بدون حذف عضویتش در سازمان‌های دیگر به این سازمان اضافه می‌شود.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={startAddExistingUser}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="existing-user-email">رایانامهٔ حساب موجود</FieldLabel>
+                <Input id="existing-user-email" type="email" dir="ltr" autoComplete="email" required value={existingEmail} onChange={event => setExistingEmail(event.target.value)} placeholder="name@company.com" />
+              </Field>
+              <Field>
+                <FieldLabel id="existing-user-role-label">نقش در این سازمان</FieldLabel>
+                <Select value={existingRole} onValueChange={value => setExistingRole((value ?? "member") as AdminUser["role"])}>
+                  <SelectTrigger className="w-full" aria-labelledby="existing-user-role-label"><SelectValue>{existingRole === "admin" ? "مدیر" : "عضو"}</SelectValue></SelectTrigger>
+                  <SelectContent><SelectGroup><SelectItem value="member">عضو</SelectItem><SelectItem value="admin">مدیر</SelectItem></SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              <Button type="submit" variant="outline" disabled={busy}><UserRoundPlus data-icon="inline-start" />بررسی و افزودن حساب</Button>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2"><UserRoundPlus aria-hidden="true" />دعوت همکار</CardTitle>
           <CardDescription>عضو دعوت‌شده با پذیرش پیوند، به‌عنوان عضو سازمان وارد می‌شود.</CardDescription>
         </CardHeader>
@@ -239,6 +320,13 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
               <Field>
                 <FieldLabel htmlFor="invite-email">رایانامهٔ همکار</FieldLabel>
                 <Input id="invite-email" type="email" dir="ltr" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="name@company.com" />
+              </Field>
+              <Field>
+                <FieldLabel id="invite-role-label">نقش پس از پذیرش دعوت</FieldLabel>
+                <Select value={inviteRole} onValueChange={value => setInviteRole((value ?? "member") as AdminUser["role"])}>
+                  <SelectTrigger className="w-full" aria-labelledby="invite-role-label"><SelectValue>{inviteRole === "admin" ? "مدیر" : "عضو"}</SelectValue></SelectTrigger>
+                  <SelectContent><SelectGroup><SelectItem value="member">عضو</SelectItem><SelectItem value="admin">مدیر</SelectItem></SelectGroup></SelectContent>
+                </Select>
               </Field>
               <Button type="submit" disabled={busy || !mailbox?.connected}>{busy ? <Spinner data-icon="inline-start" /> : <Mail data-icon="inline-start" />}فرستادن دعوت‌نامه</Button>
             </FieldGroup>
@@ -265,7 +353,7 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
                   <TableHead className="w-[14%]">دسترسی</TableHead>
                   <TableHead className="w-[22%]">وضعیت حساب</TableHead>
                   <TableHead className="w-[16%]">تاریخ عضویت</TableHead>
-                  <TableHead className="w-[12%] text-center">عملیات</TableHead>
+                  <TableHead className="w-[12%] !text-center">عملیات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>{users.users.map(user => <TableRow key={user.id} className={!user.is_active ? "text-muted-foreground" : undefined}>
@@ -286,8 +374,8 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{formatDate(user.joined_at)}</TableCell>
-                <TableCell className="text-center">{user.is_active && user.id !== currentUser.id
-                  ? <Button variant="ghost" size="sm" onClick={() => setDeactivating(user)} aria-label={`غیرفعال‌سازی ${user.email}`} title="غیرفعال‌سازی عضو"><UserX data-icon="inline-start" />غیرفعال‌سازی</Button>
+                <TableCell className="!text-center">{user.id !== currentUser.id
+                  ? <div className="flex flex-col items-center gap-1"><Button variant="ghost" size="sm" onClick={() => startRoleChange(user)}><Shield data-icon="inline-start" />تغییر نقش</Button>{user.is_active && <Button variant="ghost" size="sm" onClick={() => setDeactivating(user)} aria-label={`غیرفعال‌سازی ${user.email}`} title="غیرفعال‌سازی عضو"><UserX data-icon="inline-start" />غیرفعال‌سازی</Button>}</div>
                   : <span className="text-muted-foreground">—</span>}</TableCell>
               </TableRow>)}</TableBody>
             </Table>
@@ -304,13 +392,14 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
         <CardDescription>دعوت‌ها پس از ۷ روز منقضی می‌شوند؛ در صورت نیاز می‌توانید دوباره ارسالشان کنید.</CardDescription>
       </CardHeader>
       <CardContent>
-        <Table dir="rtl" className="min-w-[700px] table-fixed [&_th]:text-right">
+        <Table dir="rtl" className="min-w-[760px] table-fixed [&_th]:text-right">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[42%]">دعوت‌شده</TableHead>
-              <TableHead className="w-[22%]">وضعیت دعوت</TableHead>
-              <TableHead className="w-[20%]">تاریخ انقضا</TableHead>
-              <TableHead className="w-[16%] text-center">عملیات</TableHead>
+              <TableHead className="w-[36%]">دعوت‌شده</TableHead>
+              <TableHead className="w-[14%]">نقش</TableHead>
+              <TableHead className="w-[20%]">وضعیت دعوت</TableHead>
+              <TableHead className="w-[16%]">تاریخ انقضا</TableHead>
+              <TableHead className="w-[14%] !text-center">عملیات</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>{users?.invitations.map(invitation => <TableRow key={invitation.id}>
@@ -320,16 +409,19 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
                 <span dir="ltr" className="truncate text-start font-medium">{invitation.email}</span>
               </div>
             </TableCell>
+            <TableCell><Badge variant="outline">{invitation.role === "admin" ? "مدیر" : "عضو"}</Badge></TableCell>
             <TableCell>
               <Badge variant={invitation.expired ? "destructive" : "secondary"}>
                 {invitation.expired ? "منقضی‌شده" : "در انتظار پذیرش"}
               </Badge>
             </TableCell>
             <TableCell className="text-muted-foreground">{formatDate(invitation.expires_at)}</TableCell>
-            <TableCell className="text-center">
-              <Button variant="outline" size="sm" onClick={() => void resend(invitation)} disabled={busyInvitation === invitation.id || !mailbox?.connected}>
-                {busyInvitation === invitation.id ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}ارسال دوباره
-              </Button>
+            <TableCell className="!text-center">
+              <span className="inline-flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => void resend(invitation)} disabled={busyInvitation === invitation.id || !mailbox?.connected}>
+                  {busyInvitation === invitation.id ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}ارسال دوباره
+                </Button>
+              </span>
             </TableCell>
           </TableRow>)}</TableBody>
         </Table>
@@ -346,6 +438,42 @@ function AdminUsersSettings({ currentUser }: { currentUser: Me }) {
         <DialogFooter>
           <Button variant="outline" onClick={() => setDeactivating(null)} disabled={busy}>بازگشت</Button>
           <Button variant="destructive" onClick={() => void deactivate()} disabled={busy}>{busy && <Spinner data-icon="inline-start" />}غیرفعال‌کردن حساب</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={Boolean(addingExistingUser)} onOpenChange={open => { if (!open && !busy) setAddingExistingUser(null) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>افزودن حساب موجود</DialogTitle>
+          <DialogDescription>این حساب در سازمان شما عضو می‌شود و عضویت‌ها و سوابقش در سازمان‌های دیگر دست‌نخورده می‌مانند.</DialogDescription>
+        </DialogHeader>
+        <p dir="ltr" className="text-sm">{addingExistingUser?.email}</p>
+        <p className="text-sm text-muted-foreground">نقش در این سازمان: {addingExistingUser?.role === "admin" ? "مدیر" : "عضو"}</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setAddingExistingUser(null)} disabled={busy}>بازگشت</Button>
+          <Button onClick={() => void addAccount()} disabled={busy}>{busy && <Spinner data-icon="inline-start" />}افزودن به سازمان</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={Boolean(changingRole)} onOpenChange={open => { if (!open && !busy) setChangingRole(null) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>تغییر نقش عضو</DialogTitle>
+          <DialogDescription>مدیر به تنظیمات کاربران و دسترسی‌های سازمان دسترسی دارد؛ عضو این دسترسی را ندارد.</DialogDescription>
+        </DialogHeader>
+        <p dir="ltr" className="text-sm">{changingRole?.email}</p>
+        <Field>
+          <FieldLabel id="member-role-label">نقش جدید</FieldLabel>
+          <Select value={nextRole} onValueChange={value => setNextRole((value ?? "member") as AdminUser["role"])}>
+            <SelectTrigger className="w-full" aria-labelledby="member-role-label"><SelectValue>{nextRole === "admin" ? "مدیر" : "عضو"}</SelectValue></SelectTrigger>
+            <SelectContent><SelectGroup><SelectItem value="member">عضو</SelectItem><SelectItem value="admin">مدیر</SelectItem></SelectGroup></SelectContent>
+          </Select>
+        </Field>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setChangingRole(null)} disabled={busy}>بازگشت</Button>
+          <Button onClick={() => void changeRole()} disabled={busy || nextRole === changingRole?.role}>{busy && <Spinner data-icon="inline-start" />}ثبت نقش</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

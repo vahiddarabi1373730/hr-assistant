@@ -74,7 +74,7 @@ class Membership(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="cascade"), nullable=False, unique=True
+        ForeignKey("users.id", ondelete="cascade"), nullable=False
     )
     org_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("orgs.id", ondelete="cascade"), nullable=False, index=True
@@ -107,6 +107,15 @@ class OrgInvitation(Base):
         ForeignKey("orgs.id", ondelete="cascade"), nullable=False, index=True
     )
     email: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[MembershipRole] = mapped_column(
+        Enum(
+            MembershipRole,
+            name="membership_role",
+            values_callable=lambda e: [i.value for i in e],
+        ),
+        nullable=False,
+        default=MembershipRole.MEMBER,
+    )
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     invited_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="set null")

@@ -23,6 +23,8 @@ from app.models import (
     Candidate,
     CandidateApplication,
     CandidateNote,
+    Membership,
+    Org,
     OrgActivity,
     ParseJob,
     ParseJobStatus,
@@ -61,6 +63,7 @@ class SignupResponse(BaseModel):
     is_verified: bool
     org: OrgOut
     role: Literal["admin", "member"]
+    organizations: list[OrgOut]
 
 
 class MeResponse(BaseModel):
@@ -69,6 +72,7 @@ class MeResponse(BaseModel):
     org: OrgOut
     role: Literal["admin", "member"]
     is_verified: bool
+    organizations: list[OrgOut]
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -119,17 +123,29 @@ async def signup(
         is_verified=user.is_verified,
         org=OrgOut(id=org.id, name=org.name, slug=org.slug),
         role=membership.role.value,
+        organizations=[OrgOut(id=org.id, name=org.name, slug=org.slug)],
     )
 
 
 @api_router.get("/me", response_model=MeResponse, name="api:me")
-async def me(ctx: TenantContextDep) -> MeResponse:
+async def me(
+    ctx: TenantContextDep, session: Annotated[AsyncSession, Depends(get_session)]
+) -> MeResponse:
+    organizations = (
+        await session.execute(
+            select(Org)
+            .join(Membership, Membership.org_id == Org.id)
+            .where(Membership.user_id == ctx.user.id)
+            .order_by(Membership.created_at)
+        )
+    ).scalars().all()
     return MeResponse(
         id=ctx.user.id,
         email=ctx.user.email,
         org=OrgOut(id=ctx.org.id, name=ctx.org.name, slug=ctx.org.slug),
         role=ctx.membership.role.value,
         is_verified=ctx.user.is_verified,
+        organizations=[OrgOut(id=org.id, name=org.name, slug=org.slug) for org in organizations],
     )
 
 

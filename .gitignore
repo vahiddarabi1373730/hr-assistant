@@ -23,3 +23,5 @@ backend/.env
 *.log
 .data/
 .scratch/runtime/
+.scratch/ci-test-postgres/
+.scratch/**/pytest-final-*/

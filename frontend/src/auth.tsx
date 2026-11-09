@@ -13,6 +13,7 @@ interface AuthState {
   me: Me | null
   loading: boolean
   refresh: () => Promise<void>
+  selectOrganization: (organizationId: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -30,12 +31,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const selectOrganization = useCallback(async (organizationId: string) => {
+    window.localStorage.setItem("active-organization-id", organizationId)
+    await refresh()
+  }, [refresh])
+
   useEffect(() => {
     void refresh()
   }, [refresh])
 
   return (
-    <AuthContext.Provider value={{ me, loading, refresh }}>
+    <AuthContext.Provider value={{ me, loading, refresh, selectOrganization }}>
       {children}
     </AuthContext.Provider>
   )

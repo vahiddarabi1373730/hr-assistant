@@ -83,7 +83,9 @@ async def test_invite_accept_and_deactivate_preserves_membership(
     )
     assert reset.status_code == 200, reset.text
 
-    invite = await api_client.post("/api/admin/invitations", json={"email": "member@example.com"})
+    invite = await api_client.post(
+        "/api/admin/invitations", json={"email": "member@example.com", "role": "admin"}
+    )
     assert invite.status_code == 201, invite.text
     assert sent_messages
     match = re.search(r"/accept-invite\?token=([^\s]+)", sent_messages[-1][1])
@@ -109,7 +111,7 @@ async def test_invite_accept_and_deactivate_preserves_membership(
         ).one()
         assert member.is_active is True
         assert member.is_verified is True
-        assert member.role == "member"
+        assert member.role == "admin"
 
     deactivated = await api_client.post(f"/api/admin/users/{member.id}/deactivate")
     assert deactivated.status_code == 204, deactivated.text
@@ -177,3 +179,87 @@ async def test_member_cannot_access_admin_user_management(api_client, superuser_
     invite = await api_client.post("/api/admin/invitations", json={"email": "blocked@example.com"})
     assert invite.status_code == 403
     assert invite.json()["detail"] == "ADMIN_REQUIRED"
+
+
+async def test_admin_adds_existing_account_and_changes_its_role(api_client, superuser_engine):
+    owner = await api_client.post(
+        "/auth/signup",
+        json={
+            "email": "transfer-owner@example.com",
+            "password": PASSWORD,
+            "org_name": "Destination",
+        },
+    )
+    assert owner.status_code == 201, owner.text
+
+    await api_client.post("/auth/logout")
+    existing = await api_client.post(
+        "/auth/signup",
+        json={
+            "email": "existing-account@example.com",
+            "password": PASSWORD,
+            "org_name": "Accidental organisation",
+        },
+    )
+    assert existing.status_code == 201, existing.text
+    original_org_id = existing.json()["org"]["id"]
+
+    await api_client.post("/auth/logout")
+    login = await api_client.post(
+        "/auth/login",
+        data={"username": "transfer-owner@example.com", "password": PASSWORD},
+    )
+    assert login.status_code == 204, login.text
+
+    added = await api_client.post(
+        "/api/admin/users/transfer",
+        json={"email": "existing-account@example.com", "role": "member"},
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["status"] == "added"
+    async with superuser_engine.connect() as conn:
+        original_membership = await conn.scalar(
+            sa.text(
+                "select exists(select 1 from memberships "
+                "where user_id = :user_id and org_id = :org_id)"
+            ),
+            {"user_id": existing.json()["id"], "org_id": original_org_id},
+        )
+        assert original_membership is True
+
+    listed = await api_client.get("/api/admin/users")
+    assert listed.status_code == 200, listed.text
+    existing_user = next(
+        user for user in listed.json()["users"] if user["email"] == "existing-account@example.com"
+    )
+    assert existing_user["role"] == "member"
+
+    promoted = await api_client.patch(
+        f"/api/admin/users/{existing_user['id']}/role", json={"role": "admin"}
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json() == {"status": "updated", "role": "admin"}
+
+
+async def test_admin_cannot_change_own_role_or_transfer_unknown_account(api_client):
+    signup = await api_client.post(
+        "/auth/signup",
+        json={
+            "email": "role-owner@example.com",
+            "password": PASSWORD,
+            "org_name": "Role guard",
+        },
+    )
+    assert signup.status_code == 201, signup.text
+    owner_id = signup.json()["id"]
+
+    own_role = await api_client.patch(f"/api/admin/users/{owner_id}/role", json={"role": "member"})
+    assert own_role.status_code == 409
+    assert own_role.json()["detail"] == "CANNOT_CHANGE_OWN_ROLE"
+
+    unknown = await api_client.post(
+        "/api/admin/users/transfer",
+        json={"email": "missing@example.com", "role": "member"},
+    )
+    assert unknown.status_code == 404
+    assert unknown.json()["detail"] == "EXISTING_USER_NOT_FOUND"

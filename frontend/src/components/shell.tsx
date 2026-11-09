@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { Link, useLocation, useNavigate } from "react-router"
-import { ArrowLeft, BriefcaseBusiness, CalendarDays, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Plus, Settings, Sparkles, Users, type LucideIcon } from "lucide-react"
+import { ArrowLeft, BriefcaseBusiness, CalendarDays, ChevronLeft, Columns3, FileText, Inbox, Leaf, LogOut, Menu, Settings, Sparkles, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/auth"
 import { NotificationBell } from "@/components/notification-bell"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { fetchIngestionSettings, logout } from "@/lib/api"
 
@@ -27,7 +28,7 @@ const navigation: { path: string; title: string; icon: LucideIcon; adminOnly?: b
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { me, refresh } = useAuth()
+  const { me, refresh, selectOrganization } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
@@ -71,7 +72,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   </nav>
   const account = <div className="sidebar-user">
     <span className="sidebar-avatar"><Users size={18} aria-hidden="true" /></span>
-    <div className="min-w-0 flex-1"><strong>{me?.org.name}</strong><small dir="ltr">{me?.email}</small></div>
+    <div className="min-w-0 flex-1">{me && me.organizations.length > 1
+      ? <Select value={me.org.id} onValueChange={value => { if (value) void selectOrganization(value) }}>
+        <SelectTrigger size="sm" className="w-full border-0 px-0"><SelectValue>{me.org.name}</SelectValue></SelectTrigger>
+        <SelectContent><SelectGroup>{me.organizations.map(org => <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>)}</SelectGroup></SelectContent>
+      </Select>
+      : <strong>{me?.org.name}</strong>}
+      <small dir="ltr">{me?.email}</small></div>
     <Button variant="ghost" size="icon-sm" disabled={leaving} onClick={() => void signOut()} aria-label={logoutError ? "تلاش دوباره برای خروج" : "خروج از حساب"} title={logoutError ? "خروج ناموفق بود؛ دوباره تلاش کنید" : "خروج از حساب"}><LogOut /></Button>
   </div>
   return <div className="app-layout">
@@ -80,7 +87,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Link to="/board" aria-label="صفحه اصلی"><Wordmark /></Link>
       {menu}
       <div className="sidebar-bottom">
-        <div className="sidebar-hint"><strong>رزومه جدید دریافت کرده‌اید؟</strong><p>به بانک کاندیداها اضافه‌اش کنید.</p><Button variant="secondary" size="sm" render={<Link to="/upload" />} nativeButton={false} className="mt-3 w-full"><Plus data-icon="inline-start" />بارگذاری رزومه</Button></div>
         {account}
       </div>
     </aside>
