@@ -13,7 +13,7 @@
 | Frontend | https://hr-assist-137132cc.netlify.app |
 | Backend | https://hr-assist-backend-4dmd.onrender.com |
 | Health check | https://hr-assist-backend-4dmd.onrender.com/healthz |
-| Repository | https://github.com/vahiddarabi1373730/hr-assist |
+| Repository | https://github.com/vahiddarabi1373730/hr-assistant |
 
 ## وضعیت نهایی تأییدشده
 
@@ -21,7 +21,7 @@
 
 - frontend و فایل‌های استاتیک روی Netlify منتشر شده‌اند.
 - backend FastAPI به‌صورت Web Service روی Render و با وضعیت `Live` اجرا می‌شود.
-- PostgreSQL production روی Neon قرار دارد و migration تا `0009 (head)` اجرا شده است.
+- PostgreSQL production روی Neon قرار دارد و migrationهای مخزن تا `0017 (head)` هستند؛ Render آن‌ها را هنگام شروع سرویس اجرا می‌کند.
 - درخواست‌های `/api`، `/auth` و `/healthz` از Netlify به backend Render proxy می‌شوند.
 - ورود کاربر و نمایش صفحهٔ جست‌وجو از دامنهٔ عمومی Netlify با موفقیت تست شده است.
 
@@ -69,7 +69,7 @@ cd backend
 .venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-وضعیت موفق migration باید `0009 (head)` باشد. migration شمارهٔ 0002 role `hr_app` را با least privilege و RLS می‌سازد.
+وضعیت موفق migration باید `0017 (head)` باشد. migration شمارهٔ 0002 role `hr_app` را با least privilege و RLS می‌سازد.
 
 ## استقرار Render
 
@@ -82,7 +82,7 @@ alembic upgrade head && fastapi run app/main.py --host 0.0.0.0 --port $PORT
 مراحل داشبورد:
 
 1. **New → Blueprint** را انتخاب کنید.
-2. repository `vahiddarabi1373730/hr-assist` و branch `main` را انتخاب کنید.
+2. repository `vahiddarabi1373730/hr-assistant` و branch `main` را انتخاب کنید.
 3. مسیر Blueprint را `render.yaml` بگذارید.
 4. متغیرهای `HR_MIGRATION_DATABASE_URL`، `HR_APP_DATABASE_URL`، `HR_APP_DB_PASSWORD` و `HR_GROQ_API_KEY` را وارد کنید.
 5. Blueprint را deploy کنید و منتظر وضعیت `Live` بمانید.
@@ -128,4 +128,4 @@ npx --yes netlify-cli deploy --site 1e841b4a-ede2-4201-b3a4-d20fd30087f9 --dir f
 - رمز `hr_app_dev` در Neon ناامن تشخیص داده شد: رمز قوی برای `hr_app` تنظیم شد.
 - migration با pooler کند شد: migration با hostname مستقیم اجرا شد.
 
-آخرین وضعیت تأییدشده: backend روی Render با health check موفق، frontend روی Netlify با proxy فعال و دیتابیس Neon روی revision `0009`.
+آخرین وضعیت تأییدشده: backend روی Render با health check موفق، frontend روی Netlify با proxy فعال و کد migration مخزن روی revision `0017`.
