@@ -1,0 +1,27 @@
+SAMPLE RESUME - FICTIONAL TEST DATA
+
+Name: Sam Sample
+Email: sam.sample@example.invalid
+Phone: +1 555 010 0100
+Location: Test City
+
+Professional Summary
+Software engineer with five years of experience building web applications and
+automated tests. Experienced in Python, TypeScript, REST APIs, PostgreSQL, and
+cloud deployments.
+
+Work Experience
+Software Engineer | Example Systems | 2022-2025
+- Built and maintained internal web applications using Python and TypeScript.
+- Designed REST APIs and PostgreSQL data models.
+- Added automated tests and improved deployment reliability.
+
+Junior Developer | Demo Labs | 2020-2022
+- Implemented user interface features and fixed application defects.
+- Collaborated with designers and QA engineers during releases.
+
+Education
+Bachelor of Science in Computer Science | Example University | 2020
+
+Skills
+Python, TypeScript, React, FastAPI, PostgreSQL, REST APIs, Git, automated testing

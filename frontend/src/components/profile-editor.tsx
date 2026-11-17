@@ -3,7 +3,6 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
-  Alert,
   Box,
   Button,
   Checkbox,
@@ -162,10 +161,6 @@ export function ProfileEditor({
   return (
     <Box component="form" onSubmit={onSave}>
       <Stack spacing={2.5}>
-        <Alert severity="info">
-          اصلاحات شما حفظ می‌شوند. رزومهٔ جدید فقط فیلدهای خالی را پر می‌کند و
-          برای اختلاف‌ها پیشنهاد می‌دهد.
-        </Alert>
         <Box
           sx={{
             display: "grid",

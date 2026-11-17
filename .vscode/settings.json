@@ -1,3 +1,33 @@
 {
-    "git.ignoreLimitWarning": true
+  "git.ignoreLimitWarning": true,
+  "mcp": {
+    "servers": {
+      "context7": {
+        "command": "C:\\Users\\vahid\\.bun\\bin\\npx.exe",
+        "args": [
+          "-y",
+          "@context7/mcp-server"
+        ],
+        "type": "stdio",
+        "env": {}
+      },
+      "codegraph": {
+        "command": "C:\\WINDOWS\\system32\\cmd.exe",
+        "args": [
+          "/c",
+          "C:\\nvm4w\\nodejs\\codegraph.cmd",
+          "mcp"
+        ],
+        "type": "stdio"
+      },
+      "token-cache": {
+        "command": "C:\\nvm4w\\nodejs\\node.exe",
+        "args": [
+          "c:\\Users\\vahid\\.vscode\\extensions\\ai-token-optimizer.ai-token-optimize-claude-0.1.1\\dist\\cache-server.js",
+          "c:\\Vahid\\projects\\hr-assist"
+        ],
+        "type": "stdio"
+      }
+    }
+  }
 }

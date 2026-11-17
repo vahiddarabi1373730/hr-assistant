@@ -119,7 +119,6 @@ export function ReviewPage() {
           </Stack>
           <Box sx={{ minWidth: 0 }}>
             {actionable && !detail.blocked ? <>
-              <Alert severity="info" sx={{ mb: 2 }}>فقط فیلدهایی که ویرایش می‌کنید اصلاح انسانی محسوب می‌شوند. اختلاف‌های دیگر بدون بازنویسی اطلاعات فعلی، در پرونده پیشنهاد می‌شوند.</Alert>
               <ProfileEditor profile={draft} onChange={setDraft} busy={busy} onCancel={() => setDetail(null)} onSave={(event: FormEvent) => { event.preventDefault(); void decide("accept") }} />
             </> : <Alert severity="info">{detail.blocked ? "پس از بررسی موفق ایمنی، سند دوباره پردازش می‌شود." : "این سند تعیین تکلیف شده است. اصلاحات بعدی را در پروندهٔ فرد انجام دهید."}</Alert>}
           </Box>
